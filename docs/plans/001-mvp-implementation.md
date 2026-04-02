@@ -77,7 +77,7 @@ allowed_tools = [
 
 ### Permission Mode — ANSWERED
 
-Uses `permission_mode="acceptEdits"` (auto-approves file edits, other tools follow allow rules).
+Uses `permission_mode="bypassPermissions"` — runs all tools without prompting. Safe because the container runs as non-root `appuser` (required by the SDK for this mode).
 
 ---
 
@@ -235,7 +235,7 @@ ClaudeAgentOptions(
     max_turns=settings.max_turns,
     mcp_servers=mcp_servers,
     allowed_tools=[...],
-    permission_mode="acceptEdits",
+    permission_mode="bypassPermissions",
     cwd=str(workspace),
 )
 ```
