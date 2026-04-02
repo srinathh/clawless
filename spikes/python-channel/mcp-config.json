@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "python-test-channel": {
+      "command": "uv",
+      "args": ["run", "--directory", "/home/srinathh/src/clawless/spikes/python-channel", "server.py"]
+    }
+  }
+}

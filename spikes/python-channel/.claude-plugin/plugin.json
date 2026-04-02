@@ -1,0 +1,6 @@
+{
+  "name": "python-test-channel",
+  "description": "Research spike: minimal Python MCP channel server for testing Claude Code channel integration",
+  "version": "0.1.0",
+  "keywords": ["channel", "mcp", "python", "test"]
+}

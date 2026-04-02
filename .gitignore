@@ -222,3 +222,6 @@ data/*
 # ignore all secrets
 *secret.yaml
 .env
+
+# Claude Code worktrees and local state
+.claude/

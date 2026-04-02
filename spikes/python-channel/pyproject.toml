@@ -1,0 +1,9 @@
+[project]
+name = "python-channel"
+version = "0.1.0"
+description = "Research spike: verify Python MCP SDK can implement a Claude Code channel"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mcp",
+]
