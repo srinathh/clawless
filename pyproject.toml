@@ -1,16 +1,23 @@
 [project]
 name = "clawless"
 version = "0.1.0"
-description = "Add your description here"
+description = "Minimal self-hosted personal AI assistant via Claude Agent SDK"
 readme = "README.md"
 authors = [
     { name = "Hariharan Srinath", email = "srinathh@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "claude-agent-sdk",
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "twilio",
+    "pydantic-settings",
+]
 
 [project.scripts]
-clawless = "clawless:main"
+clawless = "clawless.app:main"
 
 [build-system]
 requires = ["uv_build>=0.11.1,<0.12.0"]

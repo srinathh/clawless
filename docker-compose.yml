@@ -1,0 +1,18 @@
+services:
+  agent:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      # Workspace (rw) — agent's working directory
+      - ${WORKSPACE_DIR:-./data/workspace}:/home/appuser/workspace:rw
+
+      # User Claude dir (rw) — SDK state, sessions
+      - ${USER_CLAUDE_DIR:-./data/user-claude}:/home/appuser/.claude:rw
+
+      # Optional: CLI credentials (ro overlay on rw parent)
+      # Uncomment if using subscription auth instead of API key
+      # - ~/.claude/.credentials.json:/home/appuser/.claude/.credentials.json:ro
+
+    restart: unless-stopped
