@@ -6,234 +6,261 @@ Clawless is a self-hosted personal AI assistant built on the Claude Agent SDK. A
 
 **MVP goal:** Send a WhatsApp message, get a Claude response back, running in Docker with persistent sessions.
 
-**Key reference:** The Twilio WhatsApp bridge in [srinathh/nanobot](https://github.com/srinathh/nanobot/tree/feature/twilio-whatsapp-nightly) (branch `feature/twilio-whatsapp-nightly`, file `nanobot/channels/twilio_whatsapp.py`, 334 lines) already handles webhook parsing, signature validation, media download, media staging/serving, and message splitting. Much of this can be ported directly.
+**Key references from [srinathh/nanobot](https://github.com/srinathh/nanobot):**
+
+| Branch | File | Lines | What to port |
+|--------|------|-------|-------------|
+| `feature/twilio-whatsapp-nightly` | `nanobot/channels/twilio_whatsapp.py` | 334 | Twilio webhook handling, signature validation, media download/upload, message splitting |
+| `feature/claude-agent-engine` | `nanobot/agent/claude_agent.py` | 806 | ClaudeSDKClient lifecycle, per-sender session management, session persistence, concurrency |
+
+The nanobot `claude_agent.py` implementation answers all research spike questions — no spikes needed.
 
 ---
 
-## Phase 0: Research Spikes
+## Research Spikes: Answered by Nanobot
 
-These must be completed first — results may change the implementation.
+### Client Lifecycle — ANSWERED
 
-### Spike 1: Agent SDK in Docker
+From `claude_agent.py`:
+- **One `ClaudeSDKClient` per sender** (keyed by `channel:chat_id`), stored in `self._clients: dict[str, _SessionClient]`
+- Client is created via `ClaudeSDKClient(options=options)` then `await client.__aenter__()`
+- Client stays alive across messages — reused for subsequent queries from the same sender
+- Closed via `await client.__aexit__(None, None, None)`
 
-**Goal:** Verify `ClaudeSDKClient` works inside Docker with `ANTHROPIC_API_KEY`.
+### Session Persistence — ANSWERED
 
-**What to build:**
-- Minimal Dockerfile: Python 3.13 + Node.js + Claude Code CLI + `claude-agent-sdk`
-- A 10-line Python script that calls `query(prompt="Say hello", options=ClaudeAgentOptions(max_turns=1))`
-- docker-compose.yml mounting a workspace and passing `ANTHROPIC_API_KEY`
+From `claude_agent.py`:
+- Session IDs are captured from `SystemMessage.data.get("session_id")` during `receive_response()`
+- Mapped to sender key and persisted to `workspace/claude_sessions.json`
+- On restart, `options.resume = cli_session_id` reconnects to the previous session
+- `/new` slash command closes client with `forget=True` to start fresh
 
-**What to verify:**
-- SDK installs cleanly in Docker
-- Claude Code CLI installs via npm (SDK depends on it)
-- `query()` returns a successful `ResultMessage`
-- Session `.jsonl` files appear in `~/.claude/projects/`
-- Non-root user (`appuser`) works with `bypassPermissions`
+### Concurrency — ANSWERED
 
-**What could go wrong:**
-- Claude Code CLI may need additional system dependencies
-- The SDK may try to write to paths we haven't mounted
-- `bypassPermissions` may behave differently in Docker
+From `claude_agent.py`:
+- **Per-sender `asyncio.Lock`** in `self._session_locks` — serializes messages from the same sender
+- **Global `asyncio.Semaphore`** (`NANOBOT_MAX_CONCURRENT_REQUESTS=3`) — caps total concurrent SDK calls
+- Messages dispatched via `asyncio.create_task(self._dispatch(msg))` with task tracking
 
-### Spike 2: ClaudeSDKClient Lifecycle & Concurrency
+### Query Pattern — ANSWERED
 
-**Goal:** Understand how to manage `ClaudeSDKClient` instances for multiple WhatsApp senders.
+From `claude_agent.py`:
+```python
+await sc.client.query(msg.content)
+async for message in sc.client.receive_response():
+    if isinstance(message, SystemMessage) and message.subtype == "init":
+        # capture session_id
+    elif isinstance(message, AssistantMessage):
+        # stream text blocks
+    elif isinstance(message, ResultMessage):
+        # final response in message.result
+```
 
-**What to test (can run locally, doesn't need Docker):**
-- Create a `ClaudeSDKClient`, call `query()` twice — does it maintain session?
-- Create two `ClaudeSDKClient` instances with different `cwd` or options — do they get separate sessions?
-- Call `query()` on one client while another is still processing — does it work or block?
-- Capture `session_id` from `ResultMessage`, destroy the client, create a new one with `resume=session_id` — does it restore context?
+### MCP Servers — ANSWERED
 
-**What we learn:**
-- One client per sender, or one shared client?
-- Can we use `resume` to reconnect after container restart?
-- What happens if a sender messages while their previous query is still running?
+From `claude_agent.py`:
+- MCP servers passed as dict to `ClaudeAgentOptions(mcp_servers={...})`
+- In-process MCP server created via `create_sdk_mcp_server()` for custom tools (message, cron)
+- External MCP servers from config merged with in-process server
 
-### Spike 3: Multimodal Input
+### Allowed Tools — ANSWERED
 
-**Goal:** Confirm how to pass images to `ClaudeSDKClient.query()`.
+From `claude_agent.py`:
+```python
+allowed_tools = [
+    "Read", "Write", "Edit", "Bash", "Glob", "Grep",
+    "WebSearch", "WebFetch",
+    "mcp__nanobot__*",  # in-process tools
+]
+# Plus wildcards for external MCP servers
+```
 
-**What to test:**
-- Read the SDK source or docs for the `prompt` parameter type
-- Try passing a base64-encoded image as a content block
-- Verify Claude can see and describe the image
+### Permission Mode — ANSWERED
 
-**What we learn:**
-- Exact format for image + text prompts
-- Whether we need to base64-encode or can pass file paths
+Uses `permission_mode="acceptEdits"` (auto-approves file edits, other tools follow allow rules).
 
 ---
 
-## Phase 1: Implementation Steps
+## Implementation Steps
 
 ### Step 1: Repository Structure
 
-Create the app package structure. Per the global CLAUDE.md rules: no logic in `__init__.py`, one file per functional concern, `app.py` has `main()`.
+Create the app package. Per global CLAUDE.md rules: no logic in `__init__.py`, one file per concern, `app.py` has `main()`.
 
 ```
 src/clawless/
-├── __init__.py              # minimal, re-export main if needed
-├── app.py                   # FastAPI app creation, lifespan, startup/shutdown
-├── agent.py                 # ClaudeSDKClient wrapper, session registry
+├── __init__.py              # minimal
+├── app.py                   # FastAPI app, lifespan, startup/shutdown, main()
+├── agent.py                 # ClaudeSDKClient wrapper, per-sender session registry
 ├── channels/
 │   ├── __init__.py
-│   ├── base.py              # Abstract channel interface (Protocol or ABC)
-│   └── whatsapp.py          # Twilio WhatsApp: webhook handler, media, formatter
+│   ├── base.py              # Abstract channel interface
+│   └── whatsapp.py          # Twilio WhatsApp: webhook, media, formatter, send
 ├── formatter.py             # Markdown → WhatsApp formatting
-└── config.py                # Environment variable loading, pydantic settings
+└── config.py                # Pydantic BaseSettings from .env
 ```
 
 Update `pyproject.toml`:
-- Add dependencies: `claude-agent-sdk`, `fastapi`, `uvicorn`, `httpx`, `twilio`
+- Dependencies: `claude-agent-sdk`, `fastapi`, `uvicorn[standard]`, `httpx`, `twilio`
 - Script entry point: `clawless = "clawless.app:main"`
-
-**No Dockerfile yet** — get the app working locally first.
 
 ### Step 2: Config Module
 
 **File: `src/clawless/config.py`**
 
-Pydantic `BaseSettings` that reads from environment:
-
 ```python
+from pydantic_settings import BaseSettings
+
 class Settings(BaseSettings):
+    # Auth
     anthropic_api_key: str
+
+    # Twilio
     twilio_account_sid: str
     twilio_auth_token: str
-    twilio_whatsapp_from: str  # e.g. "whatsapp:+14155238886"
+    twilio_whatsapp_from: str          # "whatsapp:+14155238886"
     twilio_webhook_path: str = "/twilio/whatsapp"
-    twilio_public_url: str = ""  # for media serving, e.g. ngrok URL
+    twilio_public_url: str = ""        # for media serving (ngrok URL)
     twilio_validate_signature: bool = False
-    allowed_senders: list[str] = []  # phone numbers, e.g. ["+1234567890"]
-    workspace_dir: str = "."
+
+    # Access control
+    allowed_senders: list[str] = []    # ["+1234567890"], empty = allow all
+
+    # Agent limits
     max_turns: int = 30
     max_budget_usd: float = 1.0
-```
+    max_concurrent_requests: int = 3
 
-Reads from `.env` file or environment variables.
+    # Paths (set by Docker, defaults for local dev)
+    workspace_dir: str = "."
+```
 
 ### Step 3: Channel Interface
 
 **File: `src/clawless/channels/base.py`**
 
-Define the abstract interface every channel must implement:
-
 ```python
-from typing import Protocol
+from dataclasses import dataclass, field
 
+@dataclass
 class InboundMessage:
-    """Parsed inbound message from a channel."""
-    sender_id: str       # unique sender identifier (e.g. "+1234567890")
-    chat_id: str         # channel-specific chat ID (e.g. "whatsapp:+1234567890")
-    content: str         # text content (may include media tags)
-    media_files: list[str]  # local paths to downloaded media files
-    metadata: dict       # channel-specific metadata
+    sender_id: str            # "+1234567890"
+    chat_id: str              # "whatsapp:+1234567890"
+    content: str              # text + media tags
+    media_files: list[str] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
 
-class Channel(Protocol):
-    """Interface that every channel must implement."""
-    name: str
-
-    async def start(self) -> None: ...
-    async def stop(self) -> None: ...
-    async def send_text(self, chat_id: str, text: str) -> None: ...
-    async def send_media(self, chat_id: str, file_path: str, caption: str = "") -> None: ...
+    @property
+    def session_key(self) -> str:
+        return f"whatsapp:{self.sender_id}"
 ```
 
-The channel registers its webhook routes with FastAPI during `start()`.
+Channel interface as a Protocol — `start(app)`, `stop()`, `send_text(chat_id, text)`, `send_media(chat_id, file_path, caption)`.
 
 ### Step 4: WhatsApp Channel — Port from Nanobot
 
 **File: `src/clawless/channels/whatsapp.py`**
 
-Port from `nanobot/channels/twilio_whatsapp.py` (334 lines). The nanobot code handles:
+Port from `nanobot/channels/twilio_whatsapp.py`. Key pieces:
 
-**Keep as-is (adapt imports):**
-- `_handle_webhook()` — Twilio POST parsing, form fields (`From`, `Body`, `NumMedia`, `MediaUrl0`...), signature validation via `RequestValidator`
-- `_download_media()` — authenticated httpx download from Twilio media URLs, content-type-based file extension guessing
-- `send()` — Twilio REST API `messages.create()`, message splitting at 1600 chars
-- `_stage_media()` / `_serve_media()` — copy outbound files to a staging dir, serve via HTTP for Twilio to fetch
-- Signature validation logic with `public_url` support for proxies/ngrok
+**Keep (adapt imports):**
+- `_handle_webhook()` — POST parsing, `From`, `Body`, `NumMedia`, `MediaUrl0`, signature validation
+- `_download_media()` — httpx + Basic Auth from Twilio media URLs
+- `send()` — `twilio.rest.Client.messages.create()`, split at 1600 chars
+- `_stage_media()` / `_serve_media()` — outbound file staging + HTTP serving
+- Signature validation with `public_url` for ngrok
 
 **Replace:**
-- `BaseChannel` / `MessageBus` → our `Channel` protocol + FastAPI integration
-- `_handle_message()` callback → enqueue to `asyncio.Queue` for agent processing
-- aiohttp web server → FastAPI routes (webhook handler becomes a FastAPI endpoint)
-- nanobot config → our `Settings` from config.py
-- `get_media_dir()` → workspace-relative paths
+- nanobot `BaseChannel` / `MessageBus` → our channel Protocol + callback to agent
+- aiohttp → FastAPI routes registered during `start(app)`
+- nanobot config → our `Settings`
+- `get_media_dir()` → `{workspace}/media/`
 
-**Key constants from nanobot:**
-- `TWILIO_MAX_MESSAGE_LEN = 1600`
-- Webhook path: `/twilio/whatsapp`
-- Media download uses `httpx.AsyncClient` with Basic Auth (`account_sid:auth_token`)
+**Webhook handler pattern (from nanobot):**
+1. Parse Twilio form data
+2. Validate signature (if enabled)
+3. Check sender against allowlist
+4. Download media attachments (if any)
+5. Build `InboundMessage` with text + media tags
+6. Return TwiML `<Response></Response>` immediately (HTTP 200)
+7. Enqueue message for async agent processing
 
-### Step 5: Agent Module — Session Registry
+### Step 5: Agent Module — Port from Nanobot
 
 **File: `src/clawless/agent.py`**
 
-Manages `ClaudeSDKClient` instances, one per sender. This is the bridge between channels and the SDK.
+Port the core pattern from `nanobot/agent/claude_agent.py`. Simplified since we don't need nanobot's bus, cron, streaming, or slash commands in MVP.
+
+**Key structures to port:**
 
 ```python
+@dataclass
+class _SessionClient:
+    client: ClaudeSDKClient
+    session_id: str | None = None
+
 class AgentManager:
-    """Manages ClaudeSDKClient instances per sender."""
-
-    def __init__(self, settings: Settings):
-        self._settings = settings
-        self._clients: dict[str, ClaudeSDKClient] = {}
-        self._locks: dict[str, asyncio.Lock] = {}  # per-sender lock
-        self._session_map: dict[str, str] = {}  # sender_id → session_id
-        self._queue: asyncio.Queue = asyncio.Queue()
-
-    async def process_message(self, message: InboundMessage, channel: Channel) -> None:
-        """Process an inbound message and send the reply via the channel."""
-        sender_id = message.sender_id
-        
-        # Per-sender lock to serialize messages from same sender
-        lock = self._locks.setdefault(sender_id, asyncio.Lock())
-        async with lock:
-            client = await self._get_or_create_client(sender_id)
-            
-            # Build prompt (text + media references)
-            prompt = self._build_prompt(message)
-            
-            # Query the SDK
-            async for msg in client.query(prompt):
-                if isinstance(msg, ResultMessage):
-                    if msg.subtype == "success":
-                        formatted = format_for_whatsapp(msg.result)
-                        await channel.send_text(message.chat_id, formatted)
-                    else:
-                        await channel.send_text(message.chat_id, 
-                            f"Sorry, I couldn't process that ({msg.subtype})")
-                    # Save session_id for resume
-                    self._session_map[sender_id] = msg.session_id
-
-    async def _get_or_create_client(self, sender_id: str) -> ClaudeSDKClient:
-        """Get existing client or create a new one. Resume session if available."""
-        if sender_id not in self._clients:
-            options = ClaudeAgentOptions(
-                allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep",
-                               "WebSearch", "WebFetch"],
-                permission_mode="bypassPermissions",
-                max_turns=self._settings.max_turns,
-                max_budget_usd=self._settings.max_budget_usd,
-                setting_sources=["project"],
-            )
-            # Resume previous session if we have one
-            if sender_id in self._session_map:
-                options.resume = self._session_map[sender_id]
-            
-            client = ClaudeSDKClient(options=options)
-            self._clients[sender_id] = client
-        return self._clients[sender_id]
+    _clients: dict[str, _SessionClient]       # session_key → client
+    _session_locks: dict[str, asyncio.Lock]    # per-sender serialization
+    _concurrency_gate: asyncio.Semaphore       # global cap
+    _session_map: dict[str, str]               # session_key → CLI session UUID
 ```
 
-**Open questions (from spikes):**
-- Does `ClaudeSDKClient` need to be used as `async with` context manager per query, or can it stay open?
-- Is `resume` set on `ClaudeAgentOptions` or passed differently?
-- What happens to the client if the query errors out — is it reusable?
+**Pattern from nanobot `_process_message()`:**
+```python
+sc = await self._get_or_create_client(session_key)
+await sc.client.query(msg.content)
+async for message in sc.client.receive_response():
+    if isinstance(message, SystemMessage) and message.subtype == "init":
+        new_id = message.data.get("session_id")
+        if new_id and new_id != sc.session_id:
+            sc.session_id = new_id
+            self._record_session(key, new_id)
+    elif isinstance(message, ResultMessage):
+        if message.result:
+            final_content = message.result
+```
 
-### Step 6: FastAPI App
+**Session persistence from nanobot:**
+- `_load_session_map()` — reads `workspace/claude_sessions.json`
+- `_save_session_map()` — writes on every new session
+- `_record_session()` — maps session_key → CLI session UUID
+- On `_get_or_create_client()`: if mapping exists, set `options.resume = cli_session_id`
+
+**Options from nanobot:**
+```python
+ClaudeAgentOptions(
+    system_prompt=system_prompt,
+    model=model,
+    max_turns=settings.max_turns,
+    mcp_servers=mcp_servers,
+    allowed_tools=[...],
+    permission_mode="acceptEdits",
+    cwd=str(workspace),
+)
+```
+
+### Step 6: Response Formatter
+
+**File: `src/clawless/formatter.py`**
+
+```python
+def format_for_whatsapp(text: str) -> str:
+    """Convert Claude's markdown to WhatsApp format."""
+    # ## Header → *Header*
+    # **bold** → *bold*
+    # - bullet → • bullet
+    # Strip HTML
+    # Preserve code blocks
+    ...
+
+def split_message(text: str, max_len: int = 1600) -> list[str]:
+    """Split at paragraph/sentence boundaries."""
+    # Port from nanobot utils/helpers.py
+    ...
+```
+
+### Step 7: FastAPI App
 
 **File: `src/clawless/app.py`**
 
@@ -243,137 +270,147 @@ from fastapi import FastAPI
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create agent manager, start channels
     settings = Settings()
-    agent_manager = AgentManager(settings)
-    whatsapp = WhatsAppChannel(settings, agent_manager)
-    
-    app.state.agent_manager = agent_manager
+    agent_mgr = AgentManager(settings)
+    whatsapp = WhatsAppChannel(settings)
+
+    app.state.agent = agent_mgr
     app.state.whatsapp = whatsapp
-    
-    await whatsapp.start(app)  # registers routes
+
+    whatsapp.register_routes(app)
+    whatsapp.set_message_handler(agent_mgr.process_message)
+
     yield
-    await whatsapp.stop()
+
+    await agent_mgr.close_all()
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 def main():
     import uvicorn
     uvicorn.run("clawless.app:app", host="0.0.0.0", port=8080)
 ```
 
-The WhatsApp channel registers its webhook route during `start()`:
+**Async processing pattern:**
+
+The WhatsApp channel webhook returns 200 immediately and enqueues. The agent processes async:
 
 ```python
-# Inside WhatsAppChannel.start():
-app.post(self._settings.twilio_webhook_path)(self.handle_webhook)
-app.get("/twilio/whatsapp/media/{filename}")(self.serve_media)
-app.get("/health")(self.health)
+# In whatsapp.py webhook handler:
+async def handle_webhook(self, request: Request):
+    message = self._parse_twilio_request(request)
+    # Fire-and-forget background task
+    asyncio.create_task(self._message_handler(message, self))
+    return Response(content="<Response></Response>", media_type="application/xml")
 ```
-
-### Step 7: Response Formatter
-
-**File: `src/clawless/formatter.py`**
-
-Convert Claude's markdown to WhatsApp format:
-
-```python
-def format_for_whatsapp(text: str, max_len: int = 1600) -> list[str]:
-    """Convert markdown to WhatsApp format and split into chunks."""
-    # 1. Convert ## headers → *bold* lines
-    # 2. Convert **bold** → *bold*
-    # 3. Convert - bullets → • bullets
-    # 4. Strip HTML
-    # 5. Preserve code blocks
-    # 6. Split at max_len on paragraph/sentence boundaries
-    ...
-```
-
-Port `split_message()` from nanobot's `utils/helpers.py` and add formatting conversion.
 
 ### Step 8: Dockerfile & Docker Compose
 
-**Dockerfile** (per spec):
+**Dockerfile:**
 ```dockerfile
 FROM python:3.13-slim
 RUN useradd -m -s /bin/bash appuser
 RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @anthropic-ai/claude-code
-USER appuser
-WORKDIR /home/appuser/workspace
 COPY --chown=appuser:appuser . /app
 RUN pip install --no-cache-dir /app
+USER appuser
+WORKDIR /home/appuser/workspace
 CMD ["clawless"]
 ```
 
-**docker-compose.yml** (per spec — 4 mounts: workspace rw, user-claude-dir rw, plugins ro, app ro + optional credentials ro overlay).
+**docker-compose.yml:**
+```yaml
+services:
+  agent:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      - ${WORKSPACE_DIR}:/home/appuser/workspace:rw
+      - ${USER_CLAUDE_DIR}:/home/appuser/.claude:rw
+      - ./src:/app:ro
+```
 
-**Entrypoint:** The `CMD` runs the `clawless` script entry point which calls `uvicorn`.
+**.env.example:**
+```
+ANTHROPIC_API_KEY=sk-ant-...
+WORKSPACE_DIR=./data/workspace
+USER_CLAUDE_DIR=./data/user-claude
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_PUBLIC_URL=https://xxxx.ngrok-free.app
+TWILIO_VALIDATE_SIGNATURE=false
+ALLOWED_SENDERS=["+1234567890"]
+MAX_TURNS=30
+MAX_BUDGET_USD=1.0
+```
 
 ### Step 9: Integration Test
 
 1. Set up Twilio WhatsApp Sandbox (free tier)
-2. Run `ngrok http 8080` to expose the webhook port
-3. Configure Twilio webhook URL: `https://<ngrok>.ngrok-free.app/twilio/whatsapp`
-4. Create `.env` with `ANTHROPIC_API_KEY`, Twilio creds, `TWILIO_PUBLIC_URL`
-5. Create `data/user-claude/CLAUDE.md` with basic persona
-6. Run `docker compose up --build`
-7. Send a WhatsApp message to the Twilio sandbox number
-8. Verify Claude responds on WhatsApp
-9. `docker compose down && docker compose up` — send another message, verify session resumes
-
-**Success criteria:**
-- Text message: received → processed → reply on WhatsApp
-- Session persistence: reply references prior conversation after restart
-- Error handling: invalid sender gets no response (allowlist)
-- Timeout: Twilio gets HTTP 200 within 15s, reply comes async via REST API
+2. `ngrok http 8080` to expose webhook port
+3. Configure Twilio webhook: `https://<ngrok>.ngrok-free.app/twilio/whatsapp`
+4. Create `data/user-claude/CLAUDE.md` with persona
+5. Create `.env` from `.env.example`
+6. `docker compose up --build`
+7. Send WhatsApp message → verify Claude responds
+8. `docker compose down && up` → verify session resumes (references prior conversation)
 
 ---
 
 ## File Dependency Graph
 
 ```
-config.py          ← reads .env, no internal deps
+config.py             ← no internal deps
     ↓
-channels/base.py   ← defines Channel protocol, InboundMessage
+channels/base.py      ← InboundMessage dataclass
     ↓
-formatter.py       ← pure function, no deps beyond stdlib
+formatter.py          ← pure functions
     ↓
-channels/whatsapp.py ← implements Channel, uses config, formatter
+channels/whatsapp.py  ← uses config, base, formatter
     ↓
-agent.py           ← uses ClaudeSDKClient, config, formatter, Channel
+agent.py              ← uses config, base, formatter, ClaudeSDKClient
     ↓
-app.py             ← wires everything together, FastAPI lifespan
+app.py                ← wires everything: FastAPI + agent + whatsapp
 ```
 
 Build order: config → base → formatter → whatsapp → agent → app
 
 ---
 
-## What's Ported from Nanobot vs. New
+## What's Ported vs. New
 
 | Component | Source | Notes |
 |-----------|--------|-------|
-| Twilio webhook parsing | Port from nanobot | Form fields, signature validation |
-| Media download | Port from nanobot | httpx + Basic Auth, content-type guessing |
-| Media staging/serving | Port from nanobot | UUID filenames, FileResponse |
-| Message splitting | Port from nanobot | `split_message()` at 1600 chars |
-| Twilio send | Port from nanobot | `messages.create()`, media_url support |
-| Channel interface | **New** | Protocol class for pluggable channels |
-| Agent session management | **New** | Per-sender ClaudeSDKClient, session resume |
-| FastAPI integration | **New** | Webhook routes, lifespan, async processing |
+| Twilio webhook parsing | Port from nanobot `twilio_whatsapp.py` | Form fields, sig validation, media download |
+| Media staging/serving | Port from nanobot `twilio_whatsapp.py` | UUID filenames, FileResponse |
+| Message splitting | Port from nanobot `utils/helpers.py` | Split at 1600 chars |
+| Twilio send | Port from nanobot `twilio_whatsapp.py` | `messages.create()`, media_url |
+| Agent session management | Port from nanobot `claude_agent.py` | Per-sender client, session map, locks, semaphore |
+| ClaudeSDKClient usage | Port from nanobot `claude_agent.py` | query/receive_response pattern, session resume |
+| Channel interface | **New** | Simpler than nanobot's BaseChannel |
+| FastAPI integration | **New** | Replace aiohttp + MessageBus |
 | Response formatter | **New** | Markdown → WhatsApp conversion |
 | Docker setup | **New** | Dockerfile, compose, mount strategy |
-| Config/settings | **New** | Pydantic BaseSettings |
+| Config/settings | **New** | Pydantic BaseSettings (simpler than nanobot's YAML) |
 
 ---
 
 ## Out of Scope (Phase 2+)
 
-- Media handling (images, voice, documents) — Phase 2
 - Plugin system — Phase 2
 - Additional channels (Telegram, etc.) — Phase 2
+- Media in prompts (multimodal input to SDK) — Phase 2
+- Custom MCP tools (message tool, cron tool) — Phase 2
+- Streaming responses — Phase 2
+- Slash commands (/new, /stop, /status) — Phase 2
 - Scheduled tasks / proactive messages — Phase 3
-- Permission relay — deferred (was channels-specific)
 - Health checks and monitoring — Phase 4
 - Cost tracking — Phase 4
