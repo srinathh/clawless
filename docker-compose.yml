@@ -11,6 +11,9 @@ services:
       # User Claude dir (rw) — SDK state, sessions
       - ${USER_CLAUDE_DIR:-./data/user-claude}:/home/appuser/.claude:rw
 
+      # Plugins (ro) — each subdirectory is a plugin with .claude-plugin/plugin.json
+      - ${PLUGINS_DIR:-./plugins}:/home/appuser/plugins:ro
+
       # Optional: CLI credentials (ro overlay on rw parent)
       # Uncomment if using subscription auth instead of API key
       # - ~/.claude/.credentials.json:/home/appuser/.claude/.credentials.json:ro

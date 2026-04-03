@@ -1,4 +1,14 @@
-"""Base types for messaging channels."""
+"""Base types for messaging channels.
+
+Each messaging platform (WhatsApp, Telegram, etc.) implements the Channel
+protocol. The sender identity is always channel-namespaced — Twilio uses
+"whatsapp:+1234567890", Telegram uses "telegram:123456", etc. This means
+the sender string is globally unique across channels without needing a
+separate channel prefix, and doubles as the session key in AgentManager
+and the reply address in Channel.send(). If there is any scope of 
+prefix confusion based on the sender id, the channel implementation must
+implement a name-spacing.
+"""
 
 from __future__ import annotations
 
@@ -8,26 +18,31 @@ from typing import Protocol
 
 @dataclass
 class InboundMessage:
-    """A parsed inbound message from any channel."""
+    """A parsed inbound message from any channel.
 
-    sender_id: str  # e.g. "+1234567890"
-    chat_id: str  # channel-specific, e.g. "whatsapp:+1234567890"
-    content: str  # text body, may include [image: path] tags
+    The sender field is the channel-namespaced identity as provided by the
+    platform (e.g. "whatsapp:+1234567890"). It serves as both the unique
+    user identifier and the reply address — no separate chat_id needed.
+    """
+
+    sender: str  # channel-namespaced, e.g. "whatsapp:+1234567890"
+    sender_name: str = ""  # display name if available (e.g. WhatsApp ProfileName)
+    content: str = ""  # text body, may include [image: path] tags
     media_files: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
-    @property
-    def session_key(self) -> str:
-        return f"whatsapp:{self.sender_id}"
-
 
 class Channel(Protocol):
-    """Interface every channel must implement."""
+    """Interface every channel must implement.
+
+    A single send() method handles both text and media. Channels that
+    support sending text + media together (e.g. Telegram) can do so in
+    one API call. Channels that don't (e.g. Twilio WhatsApp, which ignores
+    the body for video/audio/docs) send them as separate messages.
+    """
 
     name: str
 
-    async def send_text(self, chat_id: str, text: str) -> None: ...
-
-    async def send_media(
-        self, chat_id: str, file_path: str, caption: str = ""
+    async def send(
+        self, to: str, text: str = "", media: list[str] | None = None
     ) -> None: ...

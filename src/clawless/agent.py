@@ -81,6 +81,9 @@ class AgentManager:
     # ------------------------------------------------------------------
 
     def _build_options(self, session_key: str) -> ClaudeAgentOptions:
+        plugins = [
+            {"type": "local", "path": p} for p in self._settings.plugins if p
+        ]
         options = ClaudeAgentOptions(
             allowed_tools=[
                 "Read", "Write", "Edit", "Bash", "Glob", "Grep",
@@ -91,6 +94,7 @@ class AgentManager:
             max_budget_usd=self._settings.max_budget_usd,
             setting_sources=["project"],
             cwd=str(self._workspace),
+            **({"plugins": plugins} if plugins else {}),
         )
         # Resume existing session if we have a persisted mapping
         cli_session_id = self._session_map.get(session_key)
@@ -134,12 +138,12 @@ class AgentManager:
         Per-sender lock serializes messages from the same sender.
         Global semaphore caps concurrent SDK calls.
         """
-        session_key = message.session_key
-        lock = self._locks.setdefault(session_key, asyncio.Lock())
+        sender = message.sender
+        lock = self._locks.setdefault(sender, asyncio.Lock())
 
         async with lock, self._concurrency_gate:
             try:
-                sc = await self._get_or_create_client(session_key)
+                sc = await self._get_or_create_client(sender)
                 final_content = ""
 
                 await sc.client.query(message.content)
@@ -148,7 +152,7 @@ class AgentManager:
                         new_id = msg.data.get("session_id")
                         if new_id and new_id != sc.session_id:
                             sc.session_id = new_id
-                            self._record_session(session_key, new_id)
+                            self._record_session(sender, new_id)
 
                     elif isinstance(msg, ResultMessage):
                         if msg.result:
@@ -157,16 +161,16 @@ class AgentManager:
                 if not final_content:
                     final_content = "Done — no text response."
 
-                await channel.send_text(message.chat_id, final_content)
+                await channel.send(sender, text=final_content)
 
             except Exception:
-                logger.exception("Error processing message for %s", session_key)
+                logger.exception("Error processing message for %s", sender)
                 try:
-                    await channel.send_text(
-                        message.chat_id, "Sorry, I encountered an error processing your message."
+                    await channel.send(
+                        sender, text="Sorry, I encountered an error processing your message."
                     )
                 except Exception:
-                    logger.exception("Failed to send error message to %s", message.chat_id)
+                    logger.exception("Failed to send error message to %s", sender)
 
     # ------------------------------------------------------------------
     # Cleanup

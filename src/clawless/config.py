@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     twilio_public_url: str = ""  # for outbound media serving (ngrok URL)
     twilio_validate_signature: bool = False
 
+    # Plugins — comma-separated list of plugin directory paths (inside container)
+    plugins: list[str] = []
+
     # Access control — empty list means allow all
     allowed_senders: list[str] = []
 
@@ -25,4 +28,4 @@ class Settings(BaseSettings):
     max_budget_usd: float = 1.0
     max_concurrent_requests: int = 3
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file_encoding": "utf-8"}

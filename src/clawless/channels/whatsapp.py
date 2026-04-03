@@ -87,12 +87,9 @@ class WhatsAppChannel:
         message_sid = str(form.get("MessageSid", ""))
         profile_name = str(form.get("ProfileName", ""))
 
-        # Strip whatsapp: prefix for sender_id
-        sender_id = sender.replace("whatsapp:", "")
-
         # Check allowlist
-        if self._settings.allowed_senders and sender_id not in self._settings.allowed_senders:
-            logger.warning("Message from non-allowed sender %s — dropping", sender_id)
+        if self._settings.allowed_senders and sender not in self._settings.allowed_senders:
+            logger.warning("Message from non-allowed sender %s — dropping", sender)
             return Response(content="<Response></Response>", media_type="application/xml")
 
         # Download media attachments
@@ -116,15 +113,15 @@ class WhatsAppChannel:
 
         logger.info(
             "WhatsApp from %s (%s): %s (%d media)",
-            sender_id, profile_name, body[:80], num_media,
+            sender, profile_name, body[:80], num_media,
         )
 
         message = InboundMessage(
-            sender_id=sender_id,
-            chat_id=sender,
+            sender=sender,
+            sender_name=profile_name,
             content=content,
             media_files=media_files,
-            metadata={"message_sid": message_sid, "profile_name": profile_name},
+            metadata={"message_sid": message_sid},
         )
 
         # Fire-and-forget: return 200 to Twilio immediately, process async
@@ -137,33 +134,31 @@ class WhatsAppChannel:
     # Outbound: send via Twilio REST API
     # ------------------------------------------------------------------
 
-    async def send_text(self, chat_id: str, text: str) -> None:
-        """Send a text message, splitting if over Twilio's limit."""
-        formatted = format_for_whatsapp(text)
-        for chunk in split_message(formatted, max_len=TWILIO_MAX_MESSAGE_LEN):
+    async def send(self, to: str, text: str = "", media: list[str] | None = None) -> None:
+        """Send text and/or media. Twilio requires separate API calls for each."""
+        if text:
+            formatted = format_for_whatsapp(text)
+            for chunk in split_message(formatted, max_len=TWILIO_MAX_MESSAGE_LEN):
+                await asyncio.to_thread(
+                    self._twilio.messages.create,
+                    from_=self._settings.twilio_whatsapp_from,
+                    to=to,
+                    body=chunk,
+                )
+        for path in media or []:
+            if path.startswith(("http://", "https://")):
+                url = path
+            else:
+                url = self._stage_media(path)
+            if not url:
+                logger.warning("Cannot send media '%s' — no public URL available", path)
+                continue
             await asyncio.to_thread(
                 self._twilio.messages.create,
                 from_=self._settings.twilio_whatsapp_from,
-                to=chat_id,
-                body=chunk,
+                to=to,
+                media_url=[url],
             )
-
-    async def send_media(self, chat_id: str, file_path: str, caption: str = "") -> None:
-        """Send a media file via Twilio."""
-        if file_path.startswith(("http://", "https://")):
-            media_url = file_path
-        else:
-            media_url = self._stage_media(file_path)
-        if not media_url:
-            logger.warning("Cannot send media — no public URL available")
-            return
-        await asyncio.to_thread(
-            self._twilio.messages.create,
-            from_=self._settings.twilio_whatsapp_from,
-            to=chat_id,
-            body=caption or "",
-            media_url=[media_url],
-        )
 
     # ------------------------------------------------------------------
     # Outbound media staging
