@@ -5,8 +5,8 @@ RUN useradd -m -s /bin/bash clawless
 
 # Create default directories for workspace and framework state
 # These live under the user's home; both can be overridden via config/env vars
-RUN mkdir -p /home/clawless/workdir /home/clawless/datadir && \
-    chown clawless:clawless /home/clawless/workdir /home/clawless/datadir
+RUN mkdir -p /home/clawless/workspace /home/clawless/datadir && \
+    chown clawless:clawless /home/clawless/workspace /home/clawless/datadir
 
 # Install Node.js (required by Claude Code CLI)
 RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ COPY --chown=clawless:clawless . /app
 RUN pip install --no-cache-dir /app
 
 USER clawless
-WORKDIR /home/clawless/workdir
+WORKDIR /home/clawless/workspace
 
 EXPOSE 8080
 
