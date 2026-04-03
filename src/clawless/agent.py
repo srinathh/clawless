@@ -89,7 +89,7 @@ class AgentManager:
             permission_mode="bypassPermissions",
             max_turns=self._config.max_turns,
             max_budget_usd=self._config.max_budget_usd,
-            setting_sources=["project"],
+            setting_sources=["user", "project"],
             cwd=str(self._workspace),
             **({"plugins": plugins} if plugins else {}),
         )

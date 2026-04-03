@@ -4,40 +4,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Config file (ro)
-      - ./config.toml:/home/clawless/workspace/config.toml:ro
+      # Host dir created by: clawless-init /path/to/my/data
+      - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR to the host path created by clawless-init}:/home/clawless:rw
 
-      # Workspace (rw) — Claude SDK cwd, media files, agent project folder
-      - ${WORKSPACE_DIR:-clawless-workspace}:/home/clawless/workspace:rw
-
-      # Data dir (rw) — framework state (session maps, etc.)
-      - ${DATA_DIR:-clawless-datadir}:/home/clawless/datadir:rw
-
-      # User Claude dir (rw) — SDK state, sessions
-      - ${USER_CLAUDE_DIR:-clawless-claude}:/home/clawless/.claude:rw
-
-      # Plugins (ro) — each subdirectory is a plugin with .claude-plugin/plugin.json
-      - ${PLUGINS_DIR:-./plugins}:/home/clawless/plugins:ro
-
-      # Optional: CLI credentials (ro overlay on rw parent)
-      # Uncomment if using subscription auth instead of API key
+      # Optional: mount host Claude credentials for subscription auth
       # - ~/.claude/.credentials.json:/home/clawless/.claude/.credentials.json:ro
-
     environment:
-      # Secrets — set these in your host environment or CI pipeline
-      - CLAUDE__API_KEY=${CLAUDE_API_KEY:-}
-      - CHANNELS__TWILIO_WHATSAPP__AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
-
-      # Override workspace/datadir paths if mounting to non-default locations
-      # - APP__WORKSPACE=/custom/path
-      # - APP__DATA_DIR=/custom/path
-
+      # Set explicitly — not inherited from host environment
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY}
     restart: unless-stopped
-
-# Named volumes for self-contained mode (no host dirs needed).
-# Replace with bind mounts (e.g. ./my-workspace:/home/clawless/workspace)
-# to use host directories instead.
-volumes:
-  clawless-workspace:
-  clawless-datadir:
-  clawless-claude:

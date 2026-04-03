@@ -1,3 +1,280 @@
+# Plan: Simplify to Home Directory Convention
+
+## Context
+
+The current setup has multiple separately-configurable paths (`workspace`, `data_dir`,
+`plugins` list) and the docker-compose has 5 separate volume mounts. This is too
+complex. We simplify by assuming everything lives under `~` (the home dir of the
+`clawless` user in Docker).
+
+### Key insight from Claude Agent SDK reference
+
+`ClaudeAgentOptions` accepts:
+- **`cwd`**: workspace path — set to `~/workspace`
+- **`plugins`**: `[{"type": "local", "path": "..."}]` — individual plugin paths
+- **`setting_sources`**: `["user", "project"]` — SDK loads `~/.claude/settings.json`
+  (user) and `{cwd}/.claude/settings.json` + CLAUDE.md (project) automatically
+- **`env`**: dict of env vars passed to the CLI process
+
+The SDK finds `.claude` via `~`. In Docker, user is `clawless`, so `~` = `/home/clawless`.
+No explicit `.claude` configuration needed — it just works.
+
+Our framework state (`claude_sessions.json`, `config.toml`) is NOT part of the SDK — 
+it goes in `~/data/` where the agent can't see it.
+
+## Directory Structure
+
+```
+~ (/home/clawless in Docker)
+├── workspace/              # SDK cwd — agent operates here. rw
+│   ├── media/              # Channel media files (auto-created)
+│   └── .claude/            # Project-level settings + CLAUDE.md
+├── .claude/                # User-level SDK settings + credentials
+│   ├── settings.json       # User settings (loaded by SDK via setting_sources=["user"])
+│   └── .credentials.json   # API credentials (mountable from Docker host)
+├── data/                   # Framework state. rw, NOT agent-accessible
+│   ├── config.toml         # App config (channels, claude options, etc.)
+│   └── claude_sessions.json # Session persistence (auto-created by our AgentManager)
+└── plugin/                # THE plugin directory — this IS the plugin, not a parent
+    ├── .claude-plugin/
+    │   └── plugin.json
+    ├── skills/
+    ├── agents/
+    ├── commands/
+    └── hooks/
+```
+
+Note: `~/plugin/` is itself a single plugin (with its own `.claude-plugin/plugin.json`),
+not a container of multiple plugins. Passed to SDK as one entry:
+`[{"type": "local", "path": str(Path.home() / "plugin")}]`.
+
+## Bootstrap
+
+Everything is relative to `Path.home()`. No env var needed in production.
+A `ClawlessPaths` class in `config.py` provides all derived paths as properties,
+keeping path logic centralized and out of `app.py`.
+
+## Files to Change
+
+### 1. `src/clawless/config.py` — Remove AppConfig, add ClawlessPaths
+
+Remove `AppConfig` entirely. Add a paths class that derives everything from `~`
+and validates that required dirs exist on construction:
+
+```python
+class ClawlessPaths:
+    """All paths derived from the user's home directory.
+    
+    Validates that required directories exist on construction.
+    Use clawless-init to create the expected structure.
+    """
+
+    def __init__(self) -> None:
+        self._home = Path.home()
+        self._validate()
+
+    def _validate(self) -> None:
+        missing = [
+            name for name, path in [
+                ("workspace", self.workspace),
+                ("data", self.data_dir),
+                ("plugin", self.plugin_dir),
+            ]
+            if not path.is_dir()
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Missing directories under {self._home}: {', '.join(missing)}. "
+                f"Run 'clawless-init {self._home}' to create the expected structure."
+            )
+        if not self.config_file.exists():
+            raise RuntimeError(
+                f"Config file not found: {self.config_file}. "
+                f"Run 'clawless-init {self._home}' to create it."
+            )
+
+    @property
+    def home(self) -> Path: return self._home
+
+    @property
+    def workspace(self) -> Path: return self._home / "workspace"
+
+    @property
+    def data_dir(self) -> Path: return self._home / "data"
+
+    @property
+    def plugin_dir(self) -> Path: return self._home / "plugin"
+
+    @property
+    def config_file(self) -> Path: return self.data_dir / "config.toml"
+
+    @property
+    def media_dir(self) -> Path: return self.workspace / "media"
+```
+
+Update `Settings.settings_customise_sources` to use
+`Path.home() / "data" / "config.toml"` as default TOML path (note: can't use
+`ClawlessPaths()` here since validation would fail before Settings is loaded;
+just compute the path directly).
+
+`Settings` keeps only `claude: ClaudeConfig` and `channels: ChannelsConfig`.
+
+### 2. `src/clawless/app.py` — Use ClawlessPaths
+
+```python
+paths = ClawlessPaths()  # validates dirs exist, raises if not
+
+# media_dir is auto-created (runtime artifact, not part of init structure)
+paths.media_dir.mkdir(parents=True, exist_ok=True)
+
+# Single plugin if plugin_dir has the plugin manifest
+plugins = [str(paths.plugin_dir)] if (paths.plugin_dir / ".claude-plugin").is_dir() else []
+
+app.state.agent = AgentManager(settings.claude, plugins, paths.workspace, paths.data_dir)
+```
+
+### 3. `src/clawless/agent.py` — setting_sources=["user", "project"]
+
+Change `setting_sources=["project"]` to `setting_sources=["user", "project"]`.
+Constructor stays the same: `(config, plugins, workspace, data_dir)`.
+
+### 4. `src/clawless/init.py` — New `clawless-init` command
+
+Scaffolds the full home structure including plugin skeleton. Reused by tests.
+
+```python
+def init_home(path: Path) -> None:
+    """Create the prescribed clawless directory structure."""
+    for subdir in ["workspace", ".claude", "data"]:
+        (path / subdir).mkdir(parents=True, exist_ok=True)
+
+    # Plugin skeleton with prescribed structure
+    plugin = path / "plugin"
+    for plugin_subdir in [".claude-plugin", "skills", "agents", "commands", "hooks"]:
+        (plugin / plugin_subdir).mkdir(parents=True, exist_ok=True)
+
+    # Minimal plugin.json
+    manifest = plugin / ".claude-plugin" / "plugin.json"
+    if not manifest.exists():
+        manifest.write_text('{"name": "private-plugins"}\n')
+
+    # Config template
+    config_dest = path / "data" / "config.toml"
+    if not config_dest.exists():
+        config_dest.write_text(CONFIG_TEMPLATE)
+
+def main():
+    parser = argparse.ArgumentParser(prog="clawless-init")
+    parser.add_argument("path", nargs="?", default=str(Path.home() / "clawless_home"))
+    args = parser.parse_args()
+    path = Path(args.path).resolve()
+    init_home(path)
+    print(f"Initialized clawless home at {path}")
+```
+
+### 5. `pyproject.toml` — Add entry point
+
+```toml
+[project.scripts]
+clawless = "clawless.app:main"
+clawless-init = "clawless.init:main"
+```
+
+### 6. `Dockerfile` — Create structure
+
+```dockerfile
+RUN useradd -m -s /bin/bash clawless
+RUN mkdir -p /home/clawless/workspace /home/clawless/.claude \
+             /home/clawless/data /home/clawless/plugin && \
+    chown -R clawless:clawless /home/clawless
+USER clawless
+WORKDIR /home/clawless/workspace
+```
+
+### 7. `docker-compose.yml` — Single bind mount, explicit env vars
+
+```yaml
+services:
+  agent:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Host dir created by: clawless-init /path/to/my/data
+      - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR to the host path created by clawless-init}:/home/clawless:rw
+
+      # Optional: mount host Claude credentials for subscription auth
+      # - ~/.claude/.credentials.json:/home/clawless/.claude/.credentials.json:ro
+    environment:
+      # Set explicitly — not inherited from host environment
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY}
+    restart: unless-stopped
+```
+
+Note: `ANTHROPIC_API_KEY` is the standard env var the Claude SDK reads directly.
+`CLAUDE__API_KEY` (double underscore) was a pydantic-settings mapping to our
+`ClaudeConfig.api_key` field — we can drop that field since the SDK reads the
+env var itself.
+
+### 8. `config.toml.example` — Remove [app] section
+
+```toml
+# Clawless configuration — place at ~/data/config.toml
+# In Docker: /home/clawless/data/config.toml
+
+[claude]
+max_turns = 30
+max_budget_usd = 1.0
+max_concurrent_requests = 3
+
+# ... channels unchanged
+```
+
+Remove `api_key` from `[claude]` — the SDK reads `ANTHROPIC_API_KEY` env var
+directly (or `~/.claude/.credentials.json`).
+
+### 9. `tests/test_channel_integration.py` — Set HOME, reuse init_home()
+
+```python
+from clawless.init import init_home
+
+@pytest_asyncio.fixture(loop_scope="session", scope="session")
+async def client():
+    run_dir = (PROJECT_ROOT / "data" / str(uuid.uuid4())).resolve()
+    init_home(run_dir)
+    (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
+
+    old_home = os.environ.get("HOME")
+    os.environ["HOME"] = str(run_dir)
+    try:
+        from clawless.app import app
+        async with LifespanManager(app) as manager:
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+                yield c
+    finally:
+        if old_home:
+            os.environ["HOME"] = old_home
+        else:
+            os.environ.pop("HOME", None)
+```
+
+### 10. `tests/test_config.py` — Update for removed AppConfig
+
+Remove `plugins`, `app.workspace`, `app.data_dir` assertions.
+Add tests for `ClawlessPaths` property derivation.
+
+## Verification
+
+1. `uv run pytest tests/ -v` — all tests pass
+2. `clawless-init /tmp/test-home && ls -la /tmp/test-home` — prescribed structure
+3. Integration tests pass with isolated HOME under `./data/<uuid>/`
+4. Docker: `clawless-init ./my-data && CLAWLESS_HOST_DIR=./my-data docker compose up`
+
+---
+
+# (Previous plan — implemented)
+
 # Plan: Add Test Channel for Integration Testing
 
 ## Context

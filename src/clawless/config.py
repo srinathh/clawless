@@ -1,13 +1,13 @@
 """Configuration loaded from TOML file with env var overrides.
 
-Config is loaded from a TOML file (default: config.toml, override via
-CONFIG_FILE env var). Environment variables can override any value using
-__ as the nesting separator (e.g. CLAUDE__API_KEY overrides claude.api_key).
+All paths are derived from Path.home() — see ClawlessPaths.
+Config is loaded from ~/data/config.toml. Environment variables can override
+any TOML value using __ as the nesting separator (e.g. CLAUDE__MAX_TURNS=10).
 """
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 from pydantic import BaseModel
 from pydantic_settings import (
@@ -17,14 +17,63 @@ from pydantic_settings import (
 )
 
 
-class AppConfig(BaseModel):
-    workspace: str = "."  # Claude SDK cwd + media; the mounted project folder
-    data_dir: str = "/home/clawless/datadir"  # framework state (session map, etc.)
-    plugins: list[str] = []
+class ClawlessPaths:
+    """All paths derived from the user's home directory.
+
+    Validates that required directories exist on construction.
+    Use clawless-init to create the expected structure.
+    """
+
+    def __init__(self) -> None:
+        self._home = Path.home()
+        self._validate()
+
+    def _validate(self) -> None:
+        missing = [
+            name for name, path in [
+                ("workspace", self.workspace),
+                ("data", self.data_dir),
+                ("plugin", self.plugin_dir),
+            ]
+            if not path.is_dir()
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Missing directories under {self._home}: {', '.join(missing)}. "
+                f"Run 'clawless-init {self._home}' to create the expected structure."
+            )
+        if not self.config_file.exists():
+            raise RuntimeError(
+                f"Config file not found: {self.config_file}. "
+                f"Run 'clawless-init {self._home}' to create it."
+            )
+
+    @property
+    def home(self) -> Path:
+        return self._home
+
+    @property
+    def workspace(self) -> Path:
+        return self._home / "workspace"
+
+    @property
+    def data_dir(self) -> Path:
+        return self._home / "data"
+
+    @property
+    def plugin_dir(self) -> Path:
+        return self._home / "plugin"
+
+    @property
+    def config_file(self) -> Path:
+        return self.data_dir / "config.toml"
+
+    @property
+    def media_dir(self) -> Path:
+        return self.workspace / "media"
 
 
 class ClaudeConfig(BaseModel):
-    api_key: str = ""  # can be empty if .credentials.json is mounted
     max_turns: int = 30
     max_budget_usd: float = 1.0
     max_concurrent_requests: int = 3
@@ -55,7 +104,6 @@ class ChannelsConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    app: AppConfig = AppConfig()
     claude: ClaudeConfig = ClaudeConfig()
     channels: ChannelsConfig = ChannelsConfig()
 
@@ -70,7 +118,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        toml_file = os.environ.get("CONFIG_FILE", "config.toml")
+        toml_file = str(Path.home() / "data" / "config.toml")
         return (
             env_settings,
             TomlConfigSettingsSource(settings_cls, toml_file=toml_file),

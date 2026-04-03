@@ -1,6 +1,6 @@
 """Integration tests for the test channel.
 
-Requires a real Claude API key (via .credentials.json or CLAUDE__API_KEY).
+Requires a real Claude API key (via .credentials.json or ANTHROPIC_API_KEY).
 Exercises the full pipeline: config → app → agent → channel.send().
 """
 
@@ -15,17 +15,13 @@ import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport
 
+from clawless.init import init_home
+
 # Test artifacts go under ./data/<uuid>/ so the user can inspect them.
 # The data/ directory is already gitignored.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-
-def _make_toml(workspace: str, data_dir: str) -> str:
-    return f"""
-[app]
-workspace = "{workspace}"
-data_dir = "{data_dir}"
-
+TOML_CONFIG = """
 [claude]
 max_turns = 5
 max_budget_usd = 0.50
@@ -38,16 +34,12 @@ messages = ["Hello, who are you?", "What is 2+2?"]
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def client():
-    run_dir = PROJECT_ROOT / "data" / str(uuid.uuid4())
-    workspace = run_dir / "workspace"
-    data_dir = run_dir / "data"
-    workspace.mkdir(parents=True)
-    data_dir.mkdir(parents=True)
+    run_dir = (PROJECT_ROOT / "data" / str(uuid.uuid4())).resolve()
+    init_home(run_dir)
+    (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
 
-    config_path = run_dir / "config.toml"
-    config_path.write_text(_make_toml(str(workspace), str(data_dir)))
-
-    os.environ["CONFIG_FILE"] = str(config_path)
+    old_home = os.environ.get("HOME")
+    os.environ["HOME"] = str(run_dir)
     try:
         from clawless.app import app
 
@@ -56,7 +48,10 @@ async def client():
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
                 yield c
     finally:
-        os.environ.pop("CONFIG_FILE", None)
+        if old_home:
+            os.environ["HOME"] = old_home
+        else:
+            os.environ.pop("HOME", None)
 
 
 @pytest.mark.asyncio(loop_scope="session")

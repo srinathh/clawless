@@ -5,13 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 
 from clawless.agent import AgentManager
 from clawless.channels.whatsapp import WhatsAppChannel
-from clawless.config import Settings
+from clawless.config import ClawlessPaths, Settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -19,23 +18,24 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    paths = ClawlessPaths()
     settings = Settings()  # type: ignore[call-arg]
-    workspace = Path(settings.app.workspace).resolve()
-    data_dir = Path(settings.app.data_dir).resolve()
 
-    workspace.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Starting clawless — home: %s", paths.home)
 
-    logger.info("Starting clawless — workspace: %s, data_dir: %s", workspace, data_dir)
+    # media_dir is a runtime artifact, auto-created
+    paths.media_dir.mkdir(parents=True, exist_ok=True)
 
-    app.state.agent = AgentManager(settings.claude, settings.app.plugins, workspace, data_dir)
+    # Single plugin if plugin_dir has the plugin manifest
+    plugins = [str(paths.plugin_dir)] if (paths.plugin_dir / ".claude-plugin").is_dir() else []
+    if plugins:
+        logger.info("Plugin loaded: %s", paths.plugin_dir)
 
-    media_dir = workspace / "media"
-    media_dir.mkdir(parents=True, exist_ok=True)
+    app.state.agent = AgentManager(settings.claude, plugins, paths.workspace, paths.data_dir)
 
     if settings.channels.twilio_whatsapp:
         app.state.whatsapp = WhatsAppChannel(
-            settings.channels.twilio_whatsapp, workspace / "media", app
+            settings.channels.twilio_whatsapp, paths.media_dir, app
         )
         logger.info("WhatsApp channel active — webhook at %s",
                      settings.channels.twilio_whatsapp.webhook_path)
