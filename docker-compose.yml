@@ -2,7 +2,7 @@ services:
   agent:
     build: .
     ports:
-      - "8080:8080"
+      - "${PORT:-18790}:${PORT:-18790}"
     volumes:
       # Host dir created by: clawless-init /path/to/my/data
       - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR to the host path created by clawless-init}:/home/clawless:rw
@@ -12,4 +12,5 @@ services:
     environment:
       # Set explicitly — not inherited from host environment
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY}
+      PORT: ${PORT:-18790}
     restart: unless-stopped

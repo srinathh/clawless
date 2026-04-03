@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 TWILIO_MAX_MESSAGE_LEN = 1600
 
 
-class WhatsAppChannel(Channel):
+class TwilioWhatsAppChannel(Channel):
     """WhatsApp channel via Twilio Business API.
 
     Receives Twilio webhooks, downloads media, and sends replies

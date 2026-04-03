@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from clawless.agent import AgentManager
-from clawless.channels.whatsapp import WhatsAppChannel
+from clawless.channels.whatsapp import TwilioWhatsAppChannel
 from clawless.config import ClawlessPaths, Settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
@@ -34,10 +34,10 @@ async def lifespan(app: FastAPI):
     app.state.agent = AgentManager(settings.claude, plugins, paths.workspace, paths.data_dir)
 
     if settings.channels.twilio_whatsapp:
-        app.state.whatsapp = WhatsAppChannel(
+        app.state.twilio_whatsapp = TwilioWhatsAppChannel(
             settings.channels.twilio_whatsapp, paths.media_dir, app
         )
-        logger.info("WhatsApp channel active — webhook at %s",
+        logger.info("Twilio WhatsApp webhook at %s",
                      settings.channels.twilio_whatsapp.webhook_path)
 
     if settings.channels.test:
@@ -68,4 +68,7 @@ async def health():
 def main() -> None:
     import uvicorn
 
-    uvicorn.run("clawless.app:app", host="0.0.0.0", port=8080)
+    from clawless.config import Settings
+
+    settings = Settings()  # type: ignore[call-arg]
+    uvicorn.run("clawless.app:app", host="0.0.0.0", port=settings.port)
