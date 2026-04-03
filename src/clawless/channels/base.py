@@ -39,9 +39,14 @@ class Channel(Protocol):
     support sending text + media together (e.g. Telegram) can do so in
     one API call. Channels that don't (e.g. Twilio WhatsApp, which ignores
     the body for video/audio/docs) send them as separate messages.
+
+    formatting_instructions is included in the prompt sent to Claude so it
+    outputs text compatible with the channel's formatting rules natively,
+    avoiding the need for post-processing.
     """
 
     name: str
+    formatting_instructions: str
 
     async def send(
         self, to: str, text: str = "", media: list[str] | None = None

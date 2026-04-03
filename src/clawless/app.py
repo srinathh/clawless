@@ -23,15 +23,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting clawless — workspace: %s", workspace)
 
-    agent_mgr = AgentManager(settings, workspace)
-
-    media_dir = workspace / "media"
-    whatsapp = WhatsAppChannel(settings, media_dir)
-    whatsapp.set_message_handler(agent_mgr.process_message)
-    whatsapp.register_routes(app)
-
-    app.state.agent = agent_mgr
-    app.state.whatsapp = whatsapp
+    app.state.agent = AgentManager(settings, workspace)
+    app.state.whatsapp = WhatsAppChannel(settings, workspace / "media", app)
 
     logger.info("Clawless ready — webhook at %s", settings.twilio_webhook_path)
     yield

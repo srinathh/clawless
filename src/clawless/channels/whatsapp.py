@@ -12,23 +12,24 @@ import mimetypes
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any, Awaitable, Callable
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client as TwilioClient
+from twilio.twiml.messaging_response import MessagingResponse
 
 from clawless.channels.base import Channel, InboundMessage
 from clawless.config import Settings
-from clawless.formatter import format_for_whatsapp, split_message
+from clawless.utils import split_text
 
 logger = logging.getLogger(__name__)
 
 TWILIO_MAX_MESSAGE_LEN = 1600
 
 
-class WhatsAppChannel:
+class WhatsAppChannel(Channel):
     """WhatsApp channel via Twilio Business API.
 
     Receives Twilio webhooks, downloads media, and sends replies
@@ -36,16 +37,21 @@ class WhatsAppChannel:
     """
 
     name = "whatsapp"
+    formatting_instructions = (
+        "The user is on WhatsApp. Use WhatsApp formatting only: "
+        "*bold*, _italic_, ~strikethrough~, ```monospace```. "
+        "No markdown headers, links, or HTML. Use • for bullet points. "
+        "Keep responses concise — messages over 1600 characters are split."
+    )
 
-    def __init__(self, settings: Settings, media_dir: Path) -> None:
+    def __init__(self, settings: Settings, media_dir: Path, app: FastAPI) -> None:
         self._settings = settings
         self._twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
         self._validator: RequestValidator | None = (
             RequestValidator(settings.twilio_auth_token)
-            if settings.twilio_validate_signature
+            if settings.twilio_public_url
             else None
         )
-        self._message_handler: Callable[[InboundMessage, Channel], Awaitable[None]] | None = None
 
         # Media directories
         self._inbound_media_dir = media_dir / "inbound"
@@ -53,15 +59,10 @@ class WhatsAppChannel:
         self._outbound_media_dir = media_dir / "outbound"
         self._outbound_media_dir.mkdir(parents=True, exist_ok=True)
 
-    def set_message_handler(
-        self, handler: Callable[[InboundMessage, Channel], Awaitable[None]]
-    ) -> None:
-        self._message_handler = handler
-
-    def register_routes(self, app: FastAPI) -> None:
-        """Register webhook and media-serving routes on the FastAPI app."""
-        app.post(self._settings.twilio_webhook_path)(self._handle_webhook)
-        app.get("/twilio/whatsapp/media/{filename}")(self._serve_media)
+        # Register routes
+        webhook_path = settings.twilio_webhook_path
+        app.post(webhook_path)(self._handle_webhook)
+        app.get(f"{webhook_path}/media/{{filename}}")(self._serve_media)
 
     # ------------------------------------------------------------------
     # Inbound: Twilio webhook
@@ -71,50 +72,51 @@ class WhatsAppChannel:
         """Handle an incoming Twilio WhatsApp webhook POST."""
         form = await request.form()
 
-        # Signature validation
+        # Signature validation — active whenever twilio_public_url is set
         if self._validator:
             signature = request.headers.get("X-Twilio-Signature", "")
-            if self._settings.twilio_public_url:
-                url = self._settings.twilio_public_url + request.url.path
-            else:
-                url = str(request.url)
+            url = self._settings.twilio_public_url + request.url.path
             if not self._validator.validate(url, dict(form), signature):
                 logger.warning("Invalid Twilio signature — rejecting request")
                 return Response(status_code=403, content="Invalid signature")
 
         sender = str(form.get("From", ""))  # "whatsapp:+1234567890"
+        if not sender:
+            return Response(status_code=400)
+
         body = str(form.get("Body", ""))
         message_sid = str(form.get("MessageSid", ""))
         profile_name = str(form.get("ProfileName", ""))
 
         # Check allowlist
-        if self._settings.allowed_senders and sender not in self._settings.allowed_senders:
+        if sender not in self._settings.allowed_senders:
             logger.warning("Message from non-allowed sender %s — dropping", sender)
-            return Response(content="<Response></Response>", media_type="application/xml")
+            return Response(status_code=403)
 
         # Download media attachments
-        num_media = int(form.get("NumMedia", "0") or "0")
+        try:
+            num_media = int(str(form.get("NumMedia", "0")))
+        except ValueError:
+            num_media = 0
+
         media_files: list[str] = []
+
         if num_media > 0:
-            media_urls = [str(form.get(f"MediaUrl{i}", "")) for i in range(num_media)]
-            media_urls = [u for u in media_urls if u]
+            media_urls = [u for i in range(num_media) if (u := str(form.get(f"MediaUrl{i}", "")))]
             media_files = await self._download_media(media_urls)
 
         # Build content with media tags
-        content = body or ""
+        content = body
         for fpath in media_files:
             mime, _ = mimetypes.guess_type(fpath)
-            tag = "image" if mime and mime.startswith("image/") else "file"
-            media_tag = f"[{tag}: {fpath}]"
+            media_tag = f"[{mime or 'application/octet-stream'}: {fpath}]"
             content = f"{content}\n{media_tag}" if content else media_tag
 
         if not content:
             content = "(empty message)"
 
-        logger.info(
-            "WhatsApp from %s (%s): %s (%d media)",
-            sender, profile_name, body[:80], num_media,
-        )
+        logger.info(f"WhatsApp msg {message_sid}: {num_media} attachments")
+        logger.debug(f"WhatsApp msg {message_sid} from {sender} ({profile_name}): {body[:80]}")
 
         message = InboundMessage(
             sender=sender,
@@ -124,11 +126,12 @@ class WhatsAppChannel:
             metadata={"message_sid": message_sid},
         )
 
-        # Fire-and-forget: return 200 to Twilio immediately, process async
-        if self._message_handler:
-            asyncio.create_task(self._message_handler(message, self))
+        # Fire-and-forget: return ack to Twilio immediately, process async
+        asyncio.create_task(request.app.state.agent.process_message(message, self))
 
-        return Response(content="<Response></Response>", media_type="application/xml")
+        resp = MessagingResponse()
+        resp.message(self._settings.twilio_ack_message)
+        return Response(content=resp.to_xml(), media_type="application/xml")
 
     # ------------------------------------------------------------------
     # Outbound: send via Twilio REST API
@@ -137,8 +140,8 @@ class WhatsAppChannel:
     async def send(self, to: str, text: str = "", media: list[str] | None = None) -> None:
         """Send text and/or media. Twilio requires separate API calls for each."""
         if text:
-            formatted = format_for_whatsapp(text)
-            for chunk in split_message(formatted, max_len=TWILIO_MAX_MESSAGE_LEN):
+            chunks = split_text(text, max_len=TWILIO_MAX_MESSAGE_LEN)
+            for chunk in chunks:
                 await asyncio.to_thread(
                     self._twilio.messages.create,
                     from_=self._settings.twilio_whatsapp_from,
@@ -166,24 +169,16 @@ class WhatsAppChannel:
 
     def _stage_media(self, local_path: str) -> str | None:
         """Copy a local file to the outbound dir and return its public URL."""
-        if not self._settings.twilio_public_url:
-            logger.warning(
-                "Cannot serve local media '%s': twilio_public_url not configured",
-                local_path,
-            )
-            return None
         src = Path(local_path).expanduser()
         if not src.is_file():
             logger.warning("Media file not found: %s", local_path)
             return None
         filename = f"{uuid.uuid4().hex}{src.suffix}"
         shutil.copy2(src, self._outbound_media_dir / filename)
-        return f"{self._settings.twilio_public_url}/twilio/whatsapp/media/{filename}"
+        return f"{self._settings.twilio_public_url}{self._settings.twilio_webhook_path}/media/{filename}"
 
     async def _serve_media(self, request: Request) -> Response:
         """Serve a staged outbound media file for Twilio to fetch."""
-        from starlette.responses import FileResponse
-
         filename = request.path_params["filename"]
         file_path = (self._outbound_media_dir / filename).resolve()
         if file_path.parent != self._outbound_media_dir.resolve():

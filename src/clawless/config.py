@@ -14,14 +14,14 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886"
     twilio_webhook_path: str = "/twilio/whatsapp"
-    twilio_public_url: str = ""  # for outbound media serving (ngrok URL)
-    twilio_validate_signature: bool = False
+    twilio_public_url: str  # public URL (ngrok, Cloudflare tunnel, reverse proxy, etc.)
+    twilio_ack_message: str = "Thinking..."  # immediate reply before agent processes
 
     # Plugins — comma-separated list of plugin directory paths (inside container)
     plugins: list[str] = []
 
-    # Access control — empty list means allow all
-    allowed_senders: list[str] = []
+    # Access control — must list at least one allowed sender
+    allowed_senders: list[str]
 
     # Agent limits
     max_turns: int = 30

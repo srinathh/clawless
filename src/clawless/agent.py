@@ -25,7 +25,6 @@ from claude_agent_sdk import (
 
 from clawless.channels.base import Channel, InboundMessage
 from clawless.config import Settings
-from clawless.formatter import format_for_whatsapp, split_message
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +145,8 @@ class AgentManager:
                 sc = await self._get_or_create_client(sender)
                 final_content = ""
 
-                await sc.client.query(message.content)
+                prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
+                await sc.client.query(prompt)
                 async for msg in sc.client.receive_response():
                     if isinstance(msg, SystemMessage) and msg.subtype == "init":
                         new_id = msg.data.get("session_id")
