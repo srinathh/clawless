@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,6 +35,13 @@ async def lifespan(app: FastAPI):
         )
         logger.info("WhatsApp channel active — webhook at %s",
                      settings.channels.twilio_whatsapp.webhook_path)
+
+    if settings.channels.test:
+        from clawless.channels.test import TestChannel
+        app.state.test = TestChannel(settings.channels.test, app)
+        asyncio.create_task(app.state.test.run())
+        logger.info("Test channel active — %d scripted messages",
+                     len(settings.channels.test.messages))
 
     if not settings.channels.has_any():
         raise RuntimeError("No channels configured — add at least one channel to config.toml")

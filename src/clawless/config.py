@@ -38,8 +38,14 @@ class TwilioWhatsAppConfig(BaseModel):
     allowed_senders: list[str]  # required — no allow-all
 
 
+class TestChannelConfig(BaseModel):
+    sender: str = "test:user1"
+    messages: list[str] = []
+
+
 class ChannelsConfig(BaseModel):
     twilio_whatsapp: TwilioWhatsAppConfig | None = None
+    test: TestChannelConfig | None = None
 
     def has_any(self) -> bool:
         """True if at least one channel is configured."""
