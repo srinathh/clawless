@@ -1,10 +1,12 @@
 FROM python:3.13-slim
 
 # Create non-root user (required for bypassPermissions)
-RUN useradd -m -s /bin/bash appuser
+RUN useradd -m -s /bin/bash clawless
 
-# Create default data directory for framework state (session maps, etc.)
-RUN mkdir -p /var/lib/clawless && chown appuser:appuser /var/lib/clawless
+# Create default directories for workspace and framework state
+# These live under the user's home; both can be overridden via config/env vars
+RUN mkdir -p /home/clawless/workdir /home/clawless/datadir && \
+    chown clawless:clawless /home/clawless/workdir /home/clawless/datadir
 
 # Install Node.js (required by Claude Code CLI)
 RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
@@ -13,11 +15,11 @@ RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists
 RUN npm install -g @anthropic-ai/claude-code
 
 # Copy and install the app
-COPY --chown=appuser:appuser . /app
+COPY --chown=clawless:clawless . /app
 RUN pip install --no-cache-dir /app
 
-USER appuser
-WORKDIR /home/appuser/workspace
+USER clawless
+WORKDIR /home/clawless/workdir
 
 EXPOSE 8080
 
