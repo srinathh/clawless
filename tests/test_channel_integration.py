@@ -6,8 +6,7 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
-import shutil
-import tempfile
+import uuid
 from pathlib import Path
 
 import httpx
@@ -15,6 +14,10 @@ import pytest
 import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport
+
+# Test artifacts go under ./data/<uuid>/ so the user can inspect them.
+# The data/ directory is already gitignored.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _make_toml(workspace: str, data_dir: str) -> str:
@@ -35,15 +38,16 @@ messages = ["Hello, who are you?", "What is 2+2?"]
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def client():
-    workspace = tempfile.mkdtemp(prefix="clawless-workspace-")
-    data_dir = tempfile.mkdtemp(prefix="clawless-data-")
+    run_dir = PROJECT_ROOT / "data" / str(uuid.uuid4())
+    workspace = run_dir / "workspace"
+    data_dir = run_dir / "data"
+    workspace.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
-        f.write(_make_toml(workspace, data_dir))
-        f.flush()
-        config_path = f.name
+    config_path = run_dir / "config.toml"
+    config_path.write_text(_make_toml(str(workspace), str(data_dir)))
 
-    os.environ["CONFIG_FILE"] = config_path
+    os.environ["CONFIG_FILE"] = str(config_path)
     try:
         from clawless.app import app
 
@@ -53,9 +57,6 @@ async def client():
                 yield c
     finally:
         os.environ.pop("CONFIG_FILE", None)
-        Path(config_path).unlink(missing_ok=True)
-        shutil.rmtree(workspace, ignore_errors=True)
-        shutil.rmtree(data_dir, ignore_errors=True)
 
 
 @pytest.mark.asyncio(loop_scope="session")
