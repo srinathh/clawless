@@ -1,9 +1,7 @@
 """Agent session management via ClaudeSDKClient.
 
 Maintains one persistent ClaudeSDKClient per sender, with per-sender
-locking and session persistence across restarts. Ported from
-srinathh/nanobot (branch feature/claude-agent-engine),
-file nanobot/agent/claude_agent.py.
+locking and session persistence across restarts.
 """
 
 from __future__ import annotations
@@ -13,7 +11,6 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -24,7 +21,7 @@ from claude_agent_sdk import (
 )
 
 from clawless.channels.base import Channel, InboundMessage
-from clawless.config import Settings
+from clawless.config import ClaudeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +41,13 @@ class AgentManager:
     A global semaphore caps total concurrent SDK calls.
     """
 
-    def __init__(self, settings: Settings, workspace: Path) -> None:
-        self._settings = settings
+    def __init__(self, config: ClaudeConfig, plugins: list[str], workspace: Path) -> None:
+        self._config = config
+        self._plugins = plugins
         self._workspace = workspace
         self._clients: dict[str, _SessionClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
-        self._concurrency_gate = asyncio.Semaphore(settings.max_concurrent_requests)
+        self._concurrency_gate = asyncio.Semaphore(config.max_concurrent_requests)
 
         # Persistent mapping: session_key → CLI session UUID
         self._session_map_path = workspace / "claude_sessions.json"
@@ -81,7 +79,7 @@ class AgentManager:
 
     def _build_options(self, session_key: str) -> ClaudeAgentOptions:
         plugins = [
-            {"type": "local", "path": p} for p in self._settings.plugins if p
+            {"type": "local", "path": p} for p in self._plugins if p
         ]
         options = ClaudeAgentOptions(
             allowed_tools=[
@@ -89,8 +87,8 @@ class AgentManager:
                 "WebSearch", "WebFetch",
             ],
             permission_mode="bypassPermissions",
-            max_turns=self._settings.max_turns,
-            max_budget_usd=self._settings.max_budget_usd,
+            max_turns=self._config.max_turns,
+            max_budget_usd=self._config.max_budget_usd,
             setting_sources=["project"],
             cwd=str(self._workspace),
             **({"plugins": plugins} if plugins else {}),

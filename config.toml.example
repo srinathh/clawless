@@ -1,0 +1,30 @@
+# Clawless configuration
+# Copy to config.toml and edit. Secrets should be set via environment
+# variables (see docker-compose.yml) rather than stored here.
+
+[app]
+# Plugin directories inside the container
+plugins = []
+
+[claude]
+# API key — prefer setting via CLAUDE__API_KEY env var
+# Can be empty if .credentials.json is mounted in ~/.claude
+api_key = ""
+max_turns = 30
+max_budget_usd = 1.0
+max_concurrent_requests = 3
+
+# Channels — only configured channels get instantiated.
+# Remove or comment out a section to disable that channel.
+
+[channels.twilio_whatsapp]
+account_sid = "AC..."
+# auth_token — set via CHANNELS__TWILIO_WHATSAPP__AUTH_TOKEN env var
+auth_token = ""
+whatsapp_from = "whatsapp:+14155238886"
+webhook_path = "/twilio/whatsapp"
+# Public URL for webhooks and media serving (ngrok, Cloudflare tunnel, etc.)
+public_url = "https://xxxx.ngrok-free.app"
+ack_message = "Thinking..."
+# Channel-namespaced senders, e.g. "whatsapp:+1234567890"
+allowed_senders = ["whatsapp:+1234567890"]

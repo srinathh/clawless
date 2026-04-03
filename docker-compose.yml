@@ -3,8 +3,10 @@ services:
     build: .
     ports:
       - "8080:8080"
-    env_file: .env
     volumes:
+      # Config file (ro)
+      - ./config.toml:/home/appuser/config.toml:ro
+
       # Workspace (rw) — agent's working directory
       - ${WORKSPACE_DIR:-./data/workspace}:/home/appuser/workspace:rw
 
@@ -17,5 +19,10 @@ services:
       # Optional: CLI credentials (ro overlay on rw parent)
       # Uncomment if using subscription auth instead of API key
       # - ~/.claude/.credentials.json:/home/appuser/.claude/.credentials.json:ro
+
+    environment:
+      # Secrets — set these in your host environment or CI pipeline
+      - CLAUDE__API_KEY=${CLAUDE_API_KEY:-}
+      - CHANNELS__TWILIO_WHATSAPP__AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
 
     restart: unless-stopped
