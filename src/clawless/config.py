@@ -19,7 +19,7 @@ from pydantic_settings import (
 
 class AppConfig(BaseModel):
     workspace: str = "."  # Claude SDK cwd + media; the mounted project folder
-    data_dir: str = "./data"  # framework state (session map, etc.)
+    data_dir: str = "/var/lib/clawless"  # framework state (session map, etc.)
     plugins: list[str] = []
 
 

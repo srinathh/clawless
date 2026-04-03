@@ -6,7 +6,7 @@
 # Claude SDK working directory — where agents operate on files (mounted project folder)
 workspace = "."
 # Framework state directory — session maps, etc. (separate mount in Docker)
-data_dir = "./data"
+data_dir = "/var/lib/clawless"
 # Plugin directories inside the container
 plugins = []
 
