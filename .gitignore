@@ -222,3 +222,7 @@ data/*
 # ignore all secrets
 *secret.yaml
 .env
+
+# Runtime state
+claude_sessions.json
+media/
