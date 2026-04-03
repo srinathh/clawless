@@ -41,7 +41,7 @@ class AgentManager:
     A global semaphore caps total concurrent SDK calls.
     """
 
-    def __init__(self, config: ClaudeConfig, plugins: list[str], workspace: Path) -> None:
+    def __init__(self, config: ClaudeConfig, plugins: list[str], workspace: Path, data_dir: Path) -> None:
         self._config = config
         self._plugins = plugins
         self._workspace = workspace
@@ -50,7 +50,7 @@ class AgentManager:
         self._concurrency_gate = asyncio.Semaphore(config.max_concurrent_requests)
 
         # Persistent mapping: session_key → CLI session UUID
-        self._session_map_path = workspace / "claude_sessions.json"
+        self._session_map_path = data_dir / "claude_sessions.json"
         self._session_map = self._load_session_map()
 
     # ------------------------------------------------------------------

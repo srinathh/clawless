@@ -20,11 +20,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = Settings()  # type: ignore[call-arg]
-    workspace = Path.cwd()
+    workspace = Path(settings.app.workspace).resolve()
+    data_dir = Path(settings.app.data_dir).resolve()
 
-    logger.info("Starting clawless — workspace: %s", workspace)
+    workspace.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    app.state.agent = AgentManager(settings.claude, settings.app.plugins, workspace)
+    logger.info("Starting clawless — workspace: %s, data_dir: %s", workspace, data_dir)
+
+    app.state.agent = AgentManager(settings.claude, settings.app.plugins, workspace, data_dir)
 
     media_dir = workspace / "media"
     media_dir.mkdir(parents=True, exist_ok=True)

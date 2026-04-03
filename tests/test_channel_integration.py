@@ -6,6 +6,7 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -15,7 +16,13 @@ import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport
 
-TOML_CONFIG = """
+
+def _make_toml(workspace: str, data_dir: str) -> str:
+    return f"""
+[app]
+workspace = "{workspace}"
+data_dir = "{data_dir}"
+
 [claude]
 max_turns = 5
 max_budget_usd = 0.50
@@ -28,8 +35,11 @@ messages = ["Hello, who are you?", "What is 2+2?"]
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def client():
+    workspace = tempfile.mkdtemp(prefix="clawless-workspace-")
+    data_dir = tempfile.mkdtemp(prefix="clawless-data-")
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
-        f.write(TOML_CONFIG)
+        f.write(_make_toml(workspace, data_dir))
         f.flush()
         config_path = f.name
 
@@ -44,6 +54,8 @@ async def client():
     finally:
         os.environ.pop("CONFIG_FILE", None)
         Path(config_path).unlink(missing_ok=True)
+        shutil.rmtree(workspace, ignore_errors=True)
+        shutil.rmtree(data_dir, ignore_errors=True)
 
 
 @pytest.mark.asyncio(loop_scope="session")

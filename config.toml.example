@@ -3,6 +3,10 @@
 # variables (see docker-compose.yml) rather than stored here.
 
 [app]
+# Claude SDK working directory — where agents operate on files (mounted project folder)
+workspace = "."
+# Framework state directory — session maps, etc. (separate mount in Docker)
+data_dir = "./data"
 # Plugin directories inside the container
 plugins = []
 
