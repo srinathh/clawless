@@ -41,6 +41,10 @@ class TwilioWhatsAppConfig(BaseModel):
 class ChannelsConfig(BaseModel):
     twilio_whatsapp: TwilioWhatsAppConfig | None = None
 
+    def has_any(self) -> bool:
+        """True if at least one channel is configured."""
+        return any(v is not None for v in self.model_dump().values())
+
 
 class Settings(BaseSettings):
     app: AppConfig = AppConfig()

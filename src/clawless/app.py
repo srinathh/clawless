@@ -25,14 +25,18 @@ async def lifespan(app: FastAPI):
 
     app.state.agent = AgentManager(settings.claude, settings.app.plugins, workspace)
 
+    media_dir = workspace / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+
     if settings.channels.twilio_whatsapp:
         app.state.whatsapp = WhatsAppChannel(
             settings.channels.twilio_whatsapp, workspace / "media", app
         )
         logger.info("WhatsApp channel active — webhook at %s",
                      settings.channels.twilio_whatsapp.webhook_path)
-    else:
-        logger.info("No WhatsApp channel configured")
+
+    if not settings.channels.has_any():
+        raise RuntimeError("No channels configured — add at least one channel to config.toml")
 
     logger.info("Clawless ready")
     yield
