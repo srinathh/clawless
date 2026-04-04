@@ -50,10 +50,12 @@ def _resolve_credentials() -> dict[str, str]:
     pytest.skip("No ANTHROPIC_API_KEY or ~/.claude/.credentials.json found")
 
 
-def _compose(*args: str, env: dict[str, str]) -> subprocess.CompletedProcess:
+def _compose(*args: str, env: dict[str, str], quiet: bool = False) -> subprocess.CompletedProcess:
     """Run a docker compose command against the project compose file."""
     cmd = ["docker", "compose", "-f", str(COMPOSE_FILE), *args]
-    return subprocess.run(cmd, env={**os.environ, **env}, capture_output=True, text=True)
+    if quiet:
+        return subprocess.run(cmd, env={**os.environ, **env}, capture_output=True, text=True)
+    return subprocess.run(cmd, env={**os.environ, **env}, text=True)
 
 
 @pytest.fixture(scope="session")
@@ -94,7 +96,7 @@ def docker_service():
         time.sleep(5)
 
     if not healthy:
-        logs = _compose("logs", env=compose_env)
+        logs = _compose("logs", env=compose_env, quiet=True)
         _compose("down", "-v", env=compose_env)
         pytest.fail(f"Container never became healthy.\nLogs:\n{logs.stdout}\n{logs.stderr}")
 
