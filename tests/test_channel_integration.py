@@ -6,7 +6,6 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,11 +39,10 @@ async def client():
     init_home(run_dir)
     (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
 
-    # Copy credentials from real home so the SDK can authenticate
-    real_home = Path.home()
-    real_creds = real_home / ".claude" / ".credentials.json"
+    # Symlink credentials from real home so the SDK can authenticate
+    real_creds = Path.home() / ".claude" / ".credentials.json"
     if real_creds.is_file():
-        shutil.copy2(real_creds, run_dir / ".claude" / ".credentials.json")
+        (run_dir / ".claude" / ".credentials.json").symlink_to(real_creds)
 
     old_home = os.environ.get("HOME")
     os.environ["HOME"] = str(run_dir)
