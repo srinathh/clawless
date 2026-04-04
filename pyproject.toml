@@ -25,6 +25,10 @@ clawless-init = "clawless.init:main"
 requires = ["uv_build>=0.11.1,<0.12.0"]
 build-backend = "uv_build"
 
+[tool.pytest.ini_options]
+markers = ["docker: Docker Compose integration tests (deselected by default)"]
+addopts = "-m 'not docker'"
+
 [dependency-groups]
 dev = [
     "asgi-lifespan>=2.1.0",

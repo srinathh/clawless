@@ -6,7 +6,7 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
-import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -17,7 +17,7 @@ from httpx import ASGITransport
 
 from clawless.init import init_home
 
-# Test artifacts go under ./data/<uuid>/ so the user can inspect them.
+# Test artifacts go under ./data/<timestamp>/ so the user can inspect them.
 # The data/ directory is already gitignored.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,7 +34,8 @@ messages = ["Hello, who are you?", "What is 2+2?"]
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def client():
-    run_dir = (PROJECT_ROOT / "data" / str(uuid.uuid4())).resolve()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+    run_dir = (PROJECT_ROOT / "data" / ts).resolve()
     init_home(run_dir)
     (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
 
