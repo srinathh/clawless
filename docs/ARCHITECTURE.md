@@ -20,13 +20,15 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 ~/
 ├── workspace/              # Claude SDK cwd — agent operates here. rw
 │   ├── media/              # Channel media files (auto-created at runtime)
-│   └── .claude/            # Project-level settings + CLAUDE.md
+│   └── .claude/
+│       └── CLAUDE.md       # Project-level instructions (workspace, media, plugin)
 ├── .claude/                # User-level SDK settings + credentials
+│   ├── CLAUDE.md           # User-level instructions (identity, communication style)
 │   ├── settings.json       # Loaded via setting_sources=["user"]
 │   └── .credentials.json   # API credentials (mountable from Docker host)
 ├── data/                   # Framework state. rw, NOT agent-accessible
 │   ├── config.toml         # App config (channels, claude options)
-│   └── claude_sessions.json # Session persistence (auto-created)
+│   └── sessions.db         # Session persistence via sqlitedict (auto-created)
 └── plugin/                 # Single plugin dir with prescribed structure
     ├── .claude-plugin/
     │   └── plugin.json
@@ -44,6 +46,12 @@ path fields — everything is conventional.
 in `~/data/` (invisible to the agent since `cwd=~/workspace`). Config is loaded
 from `~/data/config.toml`.
 
+**CLAUDE.md files**: `clawless-init` scaffolds two CLAUDE.md files loaded by the SDK
+via `setting_sources=["user", "project"]`. User-level (`~/.claude/CLAUDE.md`) defines
+the agent's identity and communication style. Project-level (`~/workspace/.claude/CLAUDE.md`)
+describes the workspace layout, media handling, and plugin system. Both are written
+only if they don't already exist, so user customizations survive re-runs of init.
+
 ## Configuration
 
 `Settings` (pydantic-settings) loads from `~/data/config.toml` with env var
@@ -54,7 +62,8 @@ Settings
 ├── claude: ClaudeConfig
 │   ├── max_turns: int = 30
 │   ├── max_budget_usd: float = 1.0
-│   └── max_concurrent_requests: int = 3
+│   ├── max_concurrent_requests: int = 3
+│   └── request_timeout: float = 300.0
 └── channels: ChannelsConfig
     ├── twilio_whatsapp: TwilioWhatsAppConfig | None
     └── test: TestChannelConfig | None
@@ -69,8 +78,10 @@ API key is NOT in config — the SDK reads `ANTHROPIC_API_KEY` env var or
 
 - **Per-sender locks**: Messages from the same sender are serialized
 - **Global semaphore**: Caps total concurrent SDK calls (default: 3)
-- **Session persistence**: `claude_sessions.json` maps sender → CLI session UUID,
+- **Session persistence**: `sessions.db` (sqlitedict) maps sender → CLI session UUID,
   allowing conversation resumption across restarts
+- **Request timeout**: Configurable timeout (default 300s) prevents hung SDK calls
+  from blocking the system
 
 ### ClaudeAgentOptions
 
@@ -79,11 +90,12 @@ Each SDK client is configured with:
 | Option | Value |
 |--------|-------|
 | `cwd` | `~/workspace` |
-| `allowed_tools` | Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch |
 | `permission_mode` | `bypassPermissions` (requires non-root user) |
 | `setting_sources` | `["user", "project"]` |
 | `plugins` | `[{"type": "local", "path": "~/plugin"}]` if manifest exists |
 | `resume` | Persisted session UUID if available |
+
+No `allowed_tools` restriction — all SDK tools are available to the agent.
 
 ### Message Processing Flow
 
@@ -91,10 +103,11 @@ Each SDK client is configured with:
 2. Fires `asyncio.create_task(agent.process_message(msg, channel))` — non-blocking
 3. AgentManager acquires per-sender lock + semaphore slot
 4. Builds prompt: `[{channel.formatting_instructions}]\n\n{content}`
-5. Sends to Claude via SDK, streams response
-6. Captures session ID from `SystemMessage.init`, persists mapping
+5. Sends to Claude via SDK, streams response (with `request_timeout` guard)
+6. Captures session ID from `SystemMessage.init`, persists to sqlitedict
 7. Extracts final text from `ResultMessage.result`
 8. Replies via `channel.send(sender, text)`
+9. On timeout: closes the client, notifies the user
 
 ## Channel Architecture
 

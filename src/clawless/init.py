@@ -10,6 +10,35 @@ import argparse
 import json
 from pathlib import Path
 
+USER_CLAUDE_MD_TEMPLATE = """\
+# Clawless Personal Assistant
+
+You are a personal AI assistant running on the Clawless framework. Users reach you through messaging channels (currently WhatsApp).
+
+## Communication style
+
+- Be concise and conversational — this is a chat, not a document
+- Skip preamble. Answer directly
+- Channel-specific formatting rules are provided in each message — follow them
+- When a task is done, say so briefly. Don't recap what you did unless asked
+"""
+
+PROJECT_CLAUDE_MD_TEMPLATE = """\
+# Workspace
+
+Your working directory is ~/workspace/. You have all Claude Code tools available with unrestricted permissions.
+
+## Media
+
+Inbound media from users arrives as `[mime/type: /path/to/file]` tags in the message text. The files are stored under ~/workspace/media/. You can read image files directly since you are multimodal.
+
+Outbound media is not yet supported — you can only reply with text.
+
+## Plugin
+
+A plugin at ~/plugin/ may provide additional skills, agents, commands, and hooks. Check ~/plugin/skills/ for available skills if relevant to a task.
+"""
+
 CONFIG_TEMPLATE = """\
 # Clawless configuration — place at ~/data/config.toml
 # In Docker: /home/clawless/data/config.toml
@@ -52,6 +81,18 @@ def init_home(path: Path) -> None:
     if not manifest.exists():
         manifest.write_text(json.dumps({"name": "private-plugin"}, indent=2) + "\n")
 
+    # Workspace .claude directory for project-level SDK settings
+    (path / "workspace" / ".claude").mkdir(parents=True, exist_ok=True)
+
+    # CLAUDE.md templates — agent identity and workspace context
+    user_claude_md = path / ".claude" / "CLAUDE.md"
+    if not user_claude_md.exists():
+        user_claude_md.write_text(USER_CLAUDE_MD_TEMPLATE)
+
+    project_claude_md = path / "workspace" / ".claude" / "CLAUDE.md"
+    if not project_claude_md.exists():
+        project_claude_md.write_text(PROJECT_CLAUDE_MD_TEMPLATE)
+
     # Config template
     config_dest = path / "data" / "config.toml"
     if not config_dest.exists():
@@ -77,10 +118,12 @@ def main() -> None:
     print(f"Initialized clawless home at {path}")
     print()
     print(f"  {path}/")
-    print(f"  ├── workspace/       # Agent working directory (Claude SDK cwd)")
-    print(f"  ├── .claude/         # Claude CLI credentials and state")
-    print(f"  ├── data/            # Framework config and state")
-    print(f"  │   └── config.toml  # Edit this to configure channels")
-    print(f"  └── plugin/          # Plugin directory (skills, agents, hooks)")
+    print(f"  ├── workspace/              # Agent working directory (Claude SDK cwd)")
+    print(f"  │   └── .claude/CLAUDE.md   # Project-level agent instructions")
+    print(f"  ├── .claude/                # Claude CLI credentials and state")
+    print(f"  │   └── CLAUDE.md           # User-level agent instructions")
+    print(f"  ├── data/                   # Framework config and state")
+    print(f"  │   └── config.toml         # Edit this to configure channels")
+    print(f"  └── plugin/                 # Plugin directory (skills, agents, hooks)")
     print()
     print(f"For Docker: CLAWLESS_HOST_DIR={path} docker compose up")
