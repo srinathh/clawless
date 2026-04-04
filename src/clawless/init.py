@@ -30,9 +30,9 @@ Your working directory is ~/workspace/. You have all Claude Code tools available
 
 ## Media
 
-Inbound media from users arrives as `[mime/type: /path/to/file]` tags in the message text. The files are stored under ~/workspace/media/. You can read image files directly since you are multimodal.
+Inbound media from users arrives as `[mime/type: /path/to/file]` tags in the message text. The files are stored under ~/workspace/media/inbound/. You can read image files directly since you are multimodal.
 
-Outbound media is not yet supported — you can only reply with text.
+Outbound media: save files to ~/workspace/media/outbound/ and include the local path in your response. The channel will stage and serve them automatically.
 
 ## Plugin
 
