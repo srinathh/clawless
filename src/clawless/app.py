@@ -37,8 +37,8 @@ async def lifespan(app: FastAPI):
         app.state.twilio_whatsapp = TwilioWhatsAppChannel(
             settings.channels.twilio_whatsapp, paths.media_dir, app
         )
-        logger.info("Twilio WhatsApp webhook at %s",
-                     settings.channels.twilio_whatsapp.webhook_path)
+        from clawless.channels.whatsapp import WEBHOOK_PATH
+        logger.info("Twilio WhatsApp webhook at %s", WEBHOOK_PATH)
 
     if settings.channels.test:
         from clawless.channels.test import TestChannel

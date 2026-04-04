@@ -23,6 +23,7 @@ from clawless.utils import split_text
 logger = logging.getLogger(__name__)
 
 TWILIO_MAX_MESSAGE_LEN = 1600
+WEBHOOK_PATH = "/twilio/whatsapp"
 
 
 class TwilioWhatsAppChannel(Channel):
@@ -56,9 +57,8 @@ class TwilioWhatsAppChannel(Channel):
         self._outbound_media_dir.mkdir(parents=True, exist_ok=True)
 
         # Register routes
-        webhook_path = config.webhook_path
-        app.post(webhook_path)(self._handle_webhook)
-        app.get(f"{webhook_path}/media/{{filename}}")(self._serve_media)
+        app.post(WEBHOOK_PATH)(self._handle_webhook)
+        app.get(f"{WEBHOOK_PATH}/media/{{filename}}")(self._serve_media)
 
     # ------------------------------------------------------------------
     # Inbound: Twilio webhook
@@ -171,7 +171,7 @@ class TwilioWhatsAppChannel(Channel):
             return None
         filename = f"{uuid.uuid4().hex}{src.suffix}"
         shutil.copy2(src, self._outbound_media_dir / filename)
-        return f"{self._config.public_url}{self._config.webhook_path}/media/{filename}"
+        return f"{self._config.public_url}{WEBHOOK_PATH}/media/{filename}"
 
     async def _serve_media(self, request: Request) -> Response:
         """Serve a staged outbound media file for Twilio to fetch."""

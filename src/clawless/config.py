@@ -84,7 +84,6 @@ class TwilioWhatsAppConfig(BaseModel):
     account_sid: str = ""
     auth_token: str = ""
     whatsapp_from: str = ""
-    webhook_path: str = "/twilio/whatsapp"
     public_url: str  # required — ngrok, Cloudflare tunnel, reverse proxy, etc.
     ack_message: str = "Thinking..."
     allowed_senders: list[str]  # required — no allow-all

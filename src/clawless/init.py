@@ -55,7 +55,6 @@ max_concurrent_requests = 3
 # account_sid = "AC..."
 # auth_token = ""
 # whatsapp_from = "whatsapp:+14155238886"
-# webhook_path = "/twilio/whatsapp"
 # public_url = "https://xxxx.ngrok-free.app"
 # ack_message = "Thinking..."
 # allowed_senders = ["whatsapp:+1234567890"]
