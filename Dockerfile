@@ -21,6 +21,6 @@ RUN pip install --no-cache-dir /app
 USER clawless
 WORKDIR /home/clawless/workspace
 
-EXPOSE 8080
+EXPOSE 18265
 
 CMD ["clawless"]

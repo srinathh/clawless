@@ -20,7 +20,7 @@ from clawless.init import init_home
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose.yml"
-TEST_PORT = 18791
+TEST_PORT = 18266
 
 TOML_CONFIG = """
 [claude]

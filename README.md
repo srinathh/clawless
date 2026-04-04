@@ -4,7 +4,7 @@ Minimal self-hosted personal AI assistant connecting messaging channels to the [
 
 ## Quick start
 
-```bash
+```
 pip install .                     # or: uv pip install .
 clawless-init ~/my-data           # scaffold home directory structure
 # edit ~/my-data/data/config.toml — configure at least one channel
@@ -12,7 +12,7 @@ clawless-init ~/my-data           # scaffold home directory structure
 
 ### Run locally
 
-```bash
+```
 ANTHROPIC_API_KEY=sk-... clawless
 ```
 
@@ -20,7 +20,7 @@ ANTHROPIC_API_KEY=sk-... clawless
 
 Two auth modes — set one or the other:
 
-```bash
+```
 # Option 1: API key
 CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
 
@@ -32,7 +32,7 @@ CLAWLESS_HOST_DIR=~/my-data CLAUDE_CREDENTIALS_FILE=~/.claude/.credentials.json 
 
 Tests create isolated home dirs under `./data/<timestamp>/`. Integration tests require `ANTHROPIC_API_KEY` or `~/.claude/.credentials.json`.
 
-```bash
+```
 # Unit tests (fast, no API key needed)
 uv run pytest tests/test_config.py -v
 
@@ -67,4 +67,4 @@ src/clawless/
     └── test.py        # Test channel for integration testing
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture and design decisions.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture and design decisions, and [docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md) for a file-by-file walkthrough.

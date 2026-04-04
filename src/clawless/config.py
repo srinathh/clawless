@@ -105,7 +105,7 @@ class ChannelsConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    port: int = 18790
+    port: int = 18265
     claude: ClaudeConfig = ClaudeConfig()
     channels: ChannelsConfig = ChannelsConfig()
 

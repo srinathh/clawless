@@ -7,8 +7,8 @@ channels to the Claude Agent SDK. A FastAPI app wires together configuration,
 agent session management, and pluggable messaging channels — all running in Docker.
 
 ```
-Messaging Platform ──webhook──▶ Channel ──fire-and-forget──▶ AgentManager ──SDK──▶ Claude
-       ◀──reply──────────────── Channel ◀──channel.send()──── AgentManager ◀──result── Claude
+Messaging Platform ──webhook──> Channel ──fire-and-forget──> AgentManager ──SDK──> Claude
+       <──reply──────────────── Channel <──channel.send()──── AgentManager <──result── Claude
 ```
 
 ## Directory Convention
@@ -20,6 +20,8 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 ~/
 ├── workspace/              # Claude SDK cwd — agent operates here. rw
 │   ├── media/              # Channel media files (auto-created at runtime)
+│   │   ├── inbound/        # Downloaded from messaging platforms
+│   │   └── outbound/       # Staged for sending via messaging platforms
 │   └── .claude/
 │       └── CLAUDE.md       # Project-level instructions (workspace, media, plugin)
 ├── .claude/                # User-level SDK settings + credentials
@@ -59,6 +61,7 @@ overrides using `__` as nesting delimiter (e.g. `CLAUDE__MAX_TURNS=10`).
 
 ```
 Settings
+├── port: int = 18265
 ├── claude: ClaudeConfig
 │   ├── max_turns: int = 30
 │   ├── max_budget_usd: float = 1.0
@@ -78,7 +81,7 @@ API key is NOT in config — the SDK reads `ANTHROPIC_API_KEY` env var or
 
 - **Per-sender locks**: Messages from the same sender are serialized
 - **Global semaphore**: Caps total concurrent SDK calls (default: 3)
-- **Session persistence**: `sessions.db` (sqlitedict) maps sender → CLI session UUID,
+- **Session persistence**: `sessions.db` (sqlitedict) maps sender -> CLI session UUID,
   allowing conversation resumption across restarts
 - **Request timeout**: Configurable timeout (default 300s) prevents hung SDK calls
   from blocking the system
@@ -143,9 +146,12 @@ class InboundMessage:
 - Registers `POST {webhook_path}` for Twilio webhooks
 - Validates Twilio request signatures
 - Enforces sender allowlist (no allow-all)
-- Downloads media via Twilio API with Basic Auth
-- Splits outgoing text at 1600 chars (Twilio limit)
-- Stages outbound media via `GET {webhook_path}/media/{filename}`
+- Downloads inbound media via Twilio API with Basic Auth to `workspace/media/inbound/`
+- Tags media in message content as `[mime/type: /path/to/file]`
+- Splits outgoing text at 1600 chars (Twilio limit) using `split_text()`
+- Stages outbound media to `workspace/media/outbound/` and serves via `GET {webhook_path}/media/{filename}` with path traversal protection
+- Returns immediate TwiML acknowledgment ("Thinking...") to meet Twilio's 15-second timeout
+- Sends actual response asynchronously via Twilio REST API
 
 ### Test Channel (`channels/test.py`)
 
@@ -169,38 +175,65 @@ Skills are auto-namespaced by the SDK (e.g. `private-plugin:my-skill`).
 ## Docker Deployment
 
 **Dockerfile**: Python 3.13-slim, non-root `clawless` user, Node.js + Claude Code CLI.
+Default port: 18265.
 
-**docker-compose.yml**: Single bind mount of host dir → `/home/clawless`:
+**docker-compose.yml**:
 
 ```yaml
 volumes:
   - ${CLAWLESS_HOST_DIR}:/home/clawless:rw
+  - ${CLAUDE_CREDENTIALS_FILE:-/dev/null}:/home/clawless/.claude/.credentials.json:ro
 environment:
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  PORT: ${PORT:-18265}
 ```
 
+Two auth modes:
+- **API key**: set `ANTHROPIC_API_KEY`, leave `CLAUDE_CREDENTIALS_FILE` unset
+- **Credentials file**: set `CLAUDE_CREDENTIALS_FILE=~/.claude/.credentials.json`, leave `ANTHROPIC_API_KEY` unset
+
+The credentials file mount overrides the specific file within the broader `/home/clawless` bind mount.
+
 **Setup**:
-```bash
-clawless-init ~/my-clawless-data    # scaffold on host
-# edit ~/my-clawless-data/data/config.toml
-CLAWLESS_HOST_DIR=~/my-clawless-data ANTHROPIC_API_KEY=sk-... docker compose up
+```
+clawless-init ~/my-data
+# edit ~/my-data/data/config.toml
+CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
 ```
 
 ## Testing
 
-### Unit tests (`tests/test_config.py`, `test_base.py`, `test_utils.py`)
+Three levels of tests, all creating isolated home dirs under `./data/<timestamp>/`:
 
-Each test creates an isolated home dir under `./data/<uuid>/` using `init_home()`,
-sets `HOME` to point there, and restores it after. This exercises the same setup
-path as production.
+### Unit tests (`test_config.py`, `test_base.py`, `test_utils.py`)
 
-### Integration tests (`tests/test_channel_integration.py`)
+Fast, no API key needed. Test configuration loading, path validation, InboundMessage
+construction, and text splitting. Each test creates an isolated home dir via `init_home()`,
+sets `HOME` to point there, and restores it after.
 
-Runs the full pipeline against the real Claude Agent SDK:
+### Host integration test (`test_channel_integration.py`)
+
+Runs the full pipeline in-process against the real Claude Agent SDK:
 - Creates isolated home dir with test channel config
+- Symlinks `~/.claude/.credentials.json` from the real home for authentication
 - Starts app via `LifespanManager` + `httpx.AsyncClient(ASGITransport)`
 - Session-scoped fixture with `loop_scope="session"` for shared event loop
 - Polls `/test/status` until done, then asserts on `/test/responses`
+- Prints agent responses to stdout
+- Asserts responses don't contain "not logged in" (auth failure detection)
+
+### Docker integration test (`test_docker_integration.py`)
+
+Builds and runs the full Docker container, skipped by default (`@pytest.mark.docker`):
+- Creates isolated home dir, scaffolds config with test channel
+- Resolves credentials: `ANTHROPIC_API_KEY` env var > `~/.claude/.credentials.json` > skip
+- Runs `docker compose up -d --build` with `PORT=18266`
+- Waits for `/health` (up to 5 min, progress printed every 10s)
+- Streams docker compose stdout/stderr to terminal
+- Polls `/test/status`, asserts on `/test/responses`
+- Tears down with `docker compose down -v`
+
+Run with: `uv run pytest -m docker -v -s`
 
 ## Key Design Decisions
 
@@ -215,3 +248,8 @@ Runs the full pipeline against the real Claude Agent SDK:
    are handled by the SDK, not our config.
 6. **setting_sources=["user", "project"]** — SDK loads both `~/.claude/settings.json`
    and `~/workspace/.claude/settings.json` + CLAUDE.md.
+7. **Formatting via prompt injection** — Each channel's `formatting_instructions` are
+   prepended to the user's message, letting Claude format natively rather than
+   post-processing output.
+8. **sqlitedict for sessions** — Simple key-value persistence with autocommit,
+   crash-safe, no migration overhead.

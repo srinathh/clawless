@@ -2,6 +2,14 @@
 
 _You don't need a claw._
 
+> **Status as of 2026-04-04**: Phase 1 (MVP) is complete. The core loop, WhatsApp
+> channel, test channel, session persistence, Docker deployment, and three tiers of
+> tests are all implemented and working. See `docs/ARCHITECTURE.md` for the current
+> architecture. This document is the original design spec and retains research
+> questions and ideas that informed the implementation — some are now answered,
+> some are deferred to later phases. Annotations like **[IMPLEMENTED]**, **[ANSWERED]**,
+> and **[DEFERRED]** mark the status of each section.
+
 ## Overview
 
 **Clawless** is a minimal, self-hosted personal AI assistant that connects messaging channels to the Claude Agent SDK, running in Docker. No middleware frameworks — no NanoClaw, no Nanobot, no OpenClaw. The Agent SDK's native features — `ClaudeSDKClient`, sessions, memory, MCP, skills, hooks — replace all orchestration that those frameworks provide.
@@ -30,6 +38,12 @@ The thesis: the claw ecosystem exists because the Agent SDK didn't have sessions
 
 ## Architecture
 
+> **[IMPLEMENTED]** The architecture below was the original vision. The actual
+> implementation simplified significantly: a single bind mount of the host home
+> directory replaces the multi-mount approach, channels are built into the app
+> (not separate plugins), and paths are conventional (`~/workspace`, `~/data`,
+> `~/plugin`) instead of configurable. See `docs/ARCHITECTURE.md` for current state.
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Docker Container (fixed paths inside)                       │
@@ -37,7 +51,7 @@ The thesis: the claw ecosystem exists because the Agent SDK didn't have sessions
 │  ┌─────────────┐    ┌──────────────────────────┐            │
 │  │  FastAPI     │    │  ClaudeSDKClient          │            │
 │  │  (webhooks)  │───▶│  - session management     │            │
-│  │  port 8080   │◀───│  - plugins (channels etc) │            │
+│  │  port 18265  │◀───│  - plugins (channels etc) │            │
 │  └─────────────┘    │  - skills & agents         │            │
 │                      │  - MCP servers             │            │
 │                      │  - hooks                   │            │
@@ -46,31 +60,15 @@ The thesis: the claw ecosystem exists because the Agent SDK didn't have sessions
 │                                 │                             │
 │  CONTAINER PATHS (fixed) ───────┼──────────────────────────  │
 │                                 │                             │
-│  /home/appuser/workspace  (rw)  │  agent's cwd (WORKDIR)     │
-│    └─ (files the agent creates) │                             │
-│                                 │                             │
-│  /home/appuser/.claude/   (rw)  │  SDK state + user config   │
-│    ├─ .credentials.json   (ro)  │  CLI auth (optional overlay)│
-│    └─ projects/                 │  session .jsonl files       │
-│       └─ <encoded-cwd>/        │                             │
-│                                 │                             │
-│  /plugins/                (ro)  │  immutable plugin packages  │
-│    ├─ whatsapp-channel/         │  (channels, skills, agents, │
-│    └─ my-custom-plugin/         │   hooks, MCP servers)       │
-│                                 │                             │
-│  /app/                    (ro)  │  open source app code       │
+│  /home/clawless/workspace (rw)  │  agent's cwd (WORKDIR)     │
+│  /home/clawless/.claude/  (rw)  │  SDK state + user config   │
+│  /home/clawless/data/     (rw)  │  config + session store    │
+│  /home/clawless/plugin/   (rw)  │  single plugin directory   │
 │                                                              │
-│  ┌──────────────────────────────────────────────┐            │
-│  │  Scheduler (APScheduler, optional)            │            │
-│  │  - Daily summaries, reminders, proactive tasks │            │
-│  └──────────────────────────────────────────────┘            │
 └──────────────────────────────────────────────────────────────┘
 
-HOST PATHS (configurable via .env)
-  WORKSPACE_DIR      → /home/appuser/workspace
-  USER_CLAUDE_DIR    → /home/appuser/.claude
-  PLUGINS_DIR        → /plugins
-  CREDENTIALS_FILE   → /home/appuser/.claude/.credentials.json (optional, ro)
+HOST: single bind mount
+  CLAWLESS_HOST_DIR → /home/clawless (entire home directory)
 ```
 
 ### Design Principle: Open Source App, Private Config
@@ -122,6 +120,8 @@ This means the webhook handler should enqueue the message and a background task 
 
 ### 2\. Session Management
 
+> **[IMPLEMENTED]** in `agent.py` as `AgentManager`. See `docs/CODE_WALKTHROUGH.md` for details.
+
 Sessions are stored by the SDK at `~/.claude/projects/<encoded-cwd>/*.jsonl`, where `<encoded-cwd>` is the absolute cwd with non-alphanumeric chars replaced by `-`. `ClaudeSDKClient` manages session IDs automatically across multiple `query()` calls.
 
 **Design:**
@@ -133,11 +133,11 @@ Sessions are stored by the SDK at `~/.claude/projects/<encoded-cwd>/*.jsonl`, wh
 *   On subsequent messages: reuse the client (or resume via `session_id` after restart)
 *   Consider session lifecycle: when to fork, when to start fresh, how to handle very long conversations
 
-**Open questions to research:**
+**Research answers:**
 
-*   Can `ClaudeSDKClient` be kept alive as a long-running process, or should it be instantiated per-message?
-*   Can multiple concurrent `query()` calls share the same `ClaudeSDKClient` instance, or do we need one client per sender?
-*   What is the maximum practical session length before compaction degrades quality?
+*   **[ANSWERED]** `ClaudeSDKClient` is kept as a long-running instance per sender, created on first message and reused. Works well.
+*   **[ANSWERED]** One client per sender is required. Concurrent access to the same client is not supported — per-sender locks serialize messages.
+*   **[DEFERRED]** Maximum session length before quality degrades is not yet characterized.
 
 ### 3\. Agent Configuration
 
@@ -201,6 +201,10 @@ The open-source app has no opinion on which MCP servers you use — this is enti
 
 ### 5\. Media Handling
 
+> **[PARTIALLY IMPLEMENTED]** Inbound media download and tagging is implemented for WhatsApp.
+> Outbound media staging and serving is implemented. Voice transcription and multimodal
+> SDK input are deferred.
+
 **Research:** How the Agent SDK handles multimodal input.
 
 **Incoming media from WhatsApp via Twilio:**
@@ -225,6 +229,9 @@ The open-source app has no opinion on which MCP servers you use — this is enti
 
 ### 6\. Response Formatting
 
+> **[IMPLEMENTED]** via `formatting_instructions` on each channel, injected into the prompt.
+> Claude formats natively rather than post-processing. Text splitting handled by `utils.py`.
+
 Each channel has its own formatting constraints. The formatter is part of the channel implementation.
 
 **WhatsApp formatting constraints:**
@@ -242,6 +249,9 @@ Each channel has its own formatting constraints. The formatter is part of the ch
 *   Preserve code blocks with triple backticks
 
 ### 7\. Async Processing & Concurrency
+
+> **[IMPLEMENTED]** in `agent.py`. Per-sender asyncio.Lock for serialization, global
+> asyncio.Semaphore for concurrency cap. Fire-and-forget via `asyncio.create_task()`.
 
 **Critical design pattern:**
 
@@ -263,7 +273,9 @@ Background worker → get ClaudeSDKClient for sender
 *   Should we use a per-sender lock to serialize processing?
 *   How does `ClaudeSDKClient` behave under concurrent access?
 
-### 8\. Scheduler (Optional, Phase 2)
+### 8\. Scheduler (Optional, Phase 3)
+
+> **[DEFERRED]** Not yet implemented.
 
 For proactive agent behavior:
 
@@ -457,16 +469,21 @@ Loaded programmatically via the `plugins` parameter in `ClaudeAgentOptions`. Eac
 
 ## Implementation Phases
 
-### Phase 1: Core Loop (MVP)
+### Phase 1: Core Loop (MVP) — COMPLETE
+
+> All items implemented. Architecture simplified from original spec: channels are
+> built into the app (not separate plugins), single home-dir bind mount replaces
+> multi-mount, conventional paths replace configurable ones.
 
 1.  Core orchestrator: FastAPI + ClaudeSDKClient + plugin loading
-2.  WhatsApp channel as first plugin (Twilio MCP server + webhook + formatter)
-3.  Maps sender to session (1:1 per WhatsApp number), creates ClaudeSDKClient
-4.  Passes message to SDK, collects response
-5.  Channel plugin formats and sends reply
-6.  Text-only, single conversation per sender
-7.  Docker container with mount model: workspace (rw), user-claude-dir (rw), plugins (ro)
-8.  Plugin paths via `CLAWLESS_PLUGINS` env var
+2.  WhatsApp channel (Twilio webhook + formatter + media download/staging)
+3.  Test channel for integration testing
+4.  Maps sender to session (1:1 per sender), creates ClaudeSDKClient
+5.  Passes message to SDK, collects response
+6.  Channel formatting instructions injected into prompt
+7.  Session persistence via sqlitedict for conversation resumption
+8.  Docker container with single bind mount + optional credentials overlay
+9.  Three-tier test suite: unit, host integration, Docker integration
 
 ### Phase 2: Media & Additional Plugins
 
@@ -493,42 +510,42 @@ Loaded programmatically via the `plugins` parameter in `ClaudeAgentOptions`. Eac
 
 ## Key Research Tasks
 
-Before implementing, research and document findings on each of these. For SDK internals, read the source code at `github.com/anthropics/claude-agent-sdk-python`.
+> Status annotations reflect what was learned during MVP implementation.
 
 ### SDK Client & Sessions
 
-**ClaudeSDKClient lifecycle**: Can it be a long-running singleton? Or instantiate per-request? What are the resource implications? Does it hold a subprocess open?
+**ClaudeSDKClient lifecycle**: **[ANSWERED]** One client per sender, kept alive as long-running instance. Each client holds a subprocess (Claude Code CLI). Created lazily on first message, cached in `AgentManager._clients`.
 
-**Concurrency model**: Can one `ClaudeSDKClient` instance handle multiple concurrent sessions (via different `session_id` values)? Or do we need one client per active conversation? What about concurrent `query()` calls on the same session?
+**Concurrency model**: **[ANSWERED]** One client per sender required. Concurrent `query()` on the same client is not supported. Per-sender `asyncio.Lock` serializes messages. Global `asyncio.Semaphore` caps total concurrent SDK calls.
 
-**Session persistence across restarts**: Test that sessions created inside the container (written to `~/.claude/projects/<encoded-cwd>/`) survive container restart when the projects directory is a bind mount. The encoded-cwd uses the container-internal path with non-alphanumeric chars replaced by `-`.
+**Session persistence across restarts**: **[ANSWERED]** Session IDs are persisted to `sqlitedict` (sessions.db). On restart, `AgentManager._build_options()` checks for a persisted session ID and sets `ClaudeAgentOptions.resume` to resume the conversation.
 
-**Session lifecycle**: What is the maximum practical session length before compaction degrades quality? When should we fork vs start fresh? How does `continue_conversation=True` differ from explicit `session_id` resume?
+**Session lifecycle**: **[DEFERRED]** Maximum session length and compaction quality not yet characterized. Fork vs. fresh start heuristics not yet implemented.
 
 ### Docker Mounts
 
-**Credentials ro overlay**: Test that mounting `~/.claude/` as rw and then `~/.claude/.credentials.json` as ro on top works correctly — the SDK can write sessions/state but cannot modify the credentials file.
+**Credentials ro overlay**: **[ANSWERED]** Works correctly. A specific file mount (`CLAUDE_CREDENTIALS_FILE`) overrides the file within the broader `/home/clawless` bind mount. Implemented in `docker-compose.yml`.
 
 ### Multimodal & Media
 
-**Multimodal input via ClaudeSDKClient**: Confirm the exact format for passing images and documents as content blocks through `client.query()`. The `query()` function accepts `str | AsyncIterable[dict]` — what does the dict look like for image + text?
+**Multimodal input via ClaudeSDKClient**: **[DEFERRED]** Currently media is tagged as `[mime/type: /path/to/file]` in the text prompt. The agent can use its Read tool to view images since it's multimodal. Direct content-block multimodal input not yet explored.
 
-**Media from Twilio**: Document the Twilio webhook payload fields for media (MediaUrl0, MediaContentType0, NumMedia). How to download media from Twilio URLs (requires account auth).
+**Media from Twilio**: **[ANSWERED]** Implemented in `channels/whatsapp.py`. Downloads media via `httpx` with Basic Auth (account_sid:auth_token), saves to `workspace/media/inbound/` with UUID filenames.
 
 ### Tools & MCP
 
-**MCP server process lifecycle**: When `.mcp.json` configures a stdio MCP server, does the SDK start/stop the process? Does it start on ClaudeSDKClient init and persist, or start per-query? What happens on process crash?
+**MCP server process lifecycle**: **[DEFERRED]** Not yet explored in depth for clawless specifically.
 
 ### Channel Integration
 
-**Twilio async response pattern**: Verify the best practice for responding to WhatsApp via Twilio REST API (not TwiML) when processing takes >15s.
+**Twilio async response pattern**: **[ANSWERED]** Webhook returns immediate TwiML with ack_message ("Thinking..."), then `asyncio.create_task()` processes the message and sends the reply via Twilio REST API.
 
-**WhatsApp message formatting**: Research the exact WhatsApp formatting syntax and character limits (4096 chars). Build the formatter module that converts Claude's markdown output to WhatsApp-compatible formatting.
+**WhatsApp message formatting**: **[ANSWERED]** Handled via `formatting_instructions` on the channel — Claude formats natively for WhatsApp. Text splitting at 1600 chars (Twilio limit, more conservative than WhatsApp's 4096) via `utils.split_text()`.
 
-**Twilio media serving**: For outgoing files (agent creates a file and wants to send it), Twilio needs a publicly accessible HTTPS URL. Research options: serve from the container with a temporary URL, upload to a file host, use Twilio's content API.
+**Twilio media serving**: **[ANSWERED]** Outbound media staged to `workspace/media/outbound/` with UUID filenames, served via `GET {webhook_path}/media/{filename}` endpoint with path traversal protection. Requires `public_url` in config.
 
 ### Operations
 
-**Cost tracking**: The SDK exposes `total_cost_usd` and `usage` on `ResultMessage`. Design a simple cost tracking approach (log file? SQLite table?).
+**Cost tracking**: **[DEFERRED]** SDK exposes cost/usage on ResultMessage but we don't track it yet.
 
-**Error handling**: What happens when the SDK hits rate limits, context overflow, or API errors? How should the bridge handle these gracefully? Research the SDK's error types and design retry/fallback behavior. What error message should the user see on WhatsApp when something goes wrong?
+**Error handling**: **[IMPLEMENTED]** `AgentManager.process_message()` catches timeouts and general exceptions, sends user-facing error messages via the channel, and logs details. Client is closed on timeout to prevent stale state.

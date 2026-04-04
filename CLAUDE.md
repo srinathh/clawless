@@ -7,7 +7,8 @@ Minimal self-hosted personal AI assistant connecting messaging channels to the C
 Read through the documentation and plans to understand the architecture:
 
 - `docs/ARCHITECTURE.md` — Current architecture, directory convention, data flow, design decisions
-- `docs/SPEC.md` — Original goals and non-goals
+- `docs/CODE_WALKTHROUGH.md` — File-by-file code walkthrough
+- `docs/SPEC.md` — Original design spec with implementation status annotations
 - `docs/plans/` — Implementation plans (check which are already implemented vs. pending)
 
 ## Project structure
@@ -38,7 +39,7 @@ src/clawless/
 Tests create isolated home dirs under `./data/<timestamp>/` and set `HOME` to point there.
 Requires `ANTHROPIC_API_KEY` env var or `~/.claude/.credentials.json` for integration tests.
 
-```bash
+```
 # Unit tests (fast, no API key needed)
 uv run pytest tests/test_config.py -v
 
@@ -62,7 +63,7 @@ Use `-s` to see agent responses printed during integration tests.
 
 Two auth modes — set one or the other:
 
-```bash
+```
 clawless-init ~/my-data          # scaffold home structure on host
 # edit ~/my-data/data/config.toml
 
