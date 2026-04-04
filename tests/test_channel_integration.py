@@ -28,7 +28,7 @@ max_budget_usd = 0.50
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?"]
+messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'"]
 """
 
 
@@ -82,9 +82,16 @@ async def test_scripted_messages_get_responses(client):
 
     r = await client.get("/test/responses")
     responses = r.json()["responses"]
-    assert len(responses) == 2
+    assert len(responses) >= 3
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"]  # non-empty response from agent
         assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
         assert resp["to"] == "test:user1"
+
+    # Verify send_message tool was used (marker text from third scripted message)
+    all_text = " ".join(r["text"] for r in responses)
+    assert "tool-test-ok" in all_text, (
+        f"Expected 'tool-test-ok' in responses from send_message tool, "
+        f"got: {[r['text'][:80] for r in responses]}"
+    )

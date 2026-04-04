@@ -22,8 +22,15 @@ from sqlitedict import SqliteDict
 
 from clawless.channels.base import Channel, InboundMessage
 from clawless.config import ClaudeConfig
+from clawless.tools import build_clawless_mcp_server, set_context, was_sent_in_turn
 
 logger = logging.getLogger(__name__)
+
+TOOL_SYSTEM_PROMPT = """\
+You MUST use the send_message tool for ALL communication with the user.
+Your final text response is NOT delivered — only send_message calls reach the user.
+Always call send_message at least once per turn with your reply.
+For media/files, include local file paths in the media parameter."""
 
 
 @dataclass
@@ -49,6 +56,7 @@ class AgentManager:
         self._locks: dict[str, asyncio.Lock] = {}
         self._concurrency_gate = asyncio.Semaphore(config.max_concurrent_requests)
         self._session_map = SqliteDict(str(data_dir / "sessions.db"), autocommit=True)
+        self._mcp_server = build_clawless_mcp_server()
 
     # ------------------------------------------------------------------
     # Client lifecycle
@@ -65,6 +73,12 @@ class AgentManager:
             setting_sources=["user", "project"],
             cwd=str(self._workspace),
             plugins=plugins,
+            mcp_servers={"clawless": self._mcp_server},
+            allowed_tools=[
+                "Read", "Write", "Edit", "Bash", "Glob", "Grep",
+                "WebSearch", "WebFetch",
+                "mcp__clawless__*",
+            ],
         )
         # Resume existing session if we have a persisted mapping
         cli_session_id = self._session_map.get(session_key)
@@ -115,9 +129,10 @@ class AgentManager:
         async with lock, self._concurrency_gate:
             try:
                 sc = await self._get_or_create_client(sender)
+                set_context(channel, sender)
 
                 async def _run_query() -> str:
-                    prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
+                    prompt = f"{TOOL_SYSTEM_PROMPT}\n\n[{channel.formatting_instructions}]\n\n{message.content}"
                     await sc.client.query(prompt)
                     content = ""
                     async for msg in sc.client.receive_response():
@@ -137,10 +152,10 @@ class AgentManager:
                     _run_query(), timeout=self._config.request_timeout
                 )
 
-                if not final_content:
-                    final_content = "Done — no text response."
-
-                await channel.send(sender, text=final_content)
+                if not was_sent_in_turn():
+                    logger.warning("Agent did not use send_message tool for %s", sender)
+                    if final_content:
+                        await channel.send(sender, text=final_content)
 
             except asyncio.TimeoutError:
                 logger.error("SDK call timed out for %s", sender)

@@ -37,6 +37,15 @@ Outbound media: save files to ~/workspace/media/outbound/ and include the local 
 ## Plugin
 
 A plugin at ~/plugin/ may provide additional skills, agents, commands, and hooks. Check ~/plugin/skills/ for available skills if relevant to a task.
+
+## Sending messages
+
+Use the send_message tool for ALL replies to the user. Your final text response
+is NOT delivered directly — only send_message calls reach the user.
+
+- send_message(text="Here's your answer...") — reply to the user
+- send_message(text="Here's the file", media=["/path/to/file.png"]) — with attachment
+- send_message(text="Working on it...") then send_message(text="Done!") — multiple messages
 """
 
 CONFIG_TEMPLATE = """\

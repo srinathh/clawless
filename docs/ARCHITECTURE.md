@@ -97,20 +97,21 @@ Each SDK client is configured with:
 | `setting_sources` | `["user", "project"]` |
 | `plugins` | `[{"type": "local", "path": "~/plugin"}]` if manifest exists |
 | `resume` | Persisted session UUID if available |
-
-No `allowed_tools` restriction — all SDK tools are available to the agent.
+| `mcp_servers` | `{"clawless": <in-process MCP server>}` with `send_message` tool |
+| `allowed_tools` | Built-in SDK tools + `mcp__clawless__*` (MCP tools require explicit allowlisting) |
 
 ### Message Processing Flow
 
 1. Channel webhook receives message, creates `InboundMessage`
 2. Fires `asyncio.create_task(agent.process_message(msg, channel))` — non-blocking
 3. AgentManager acquires per-sender lock + semaphore slot
-4. Builds prompt: `[{channel.formatting_instructions}]\n\n{content}`
-5. Sends to Claude via SDK, streams response (with `request_timeout` guard)
-6. Captures session ID from `SystemMessage.init`, persists to sqlitedict
-7. Extracts final text from `ResultMessage.result`
-8. Replies via `channel.send(sender, text)`
-9. On timeout: closes the client, notifies the user
+4. Sets tool context (`set_context(channel, sender)`) for the `send_message` MCP tool
+5. Builds prompt with system instructions + channel formatting + user content
+6. Sends to Claude via SDK, streams response (with `request_timeout` guard)
+7. Captures session ID from `SystemMessage.init`, persists to sqlitedict
+8. Agent uses `send_message` tool to deliver replies via `channel.send()`
+9. If agent didn't use the tool: logs warning, delivers `ResultMessage.result` as fallback
+10. On timeout: closes the client, notifies the user
 
 ## Channel Architecture
 
@@ -171,6 +172,20 @@ plugins=[{"type": "local", "path": str(plugin_dir)}]
 ```
 
 Skills are auto-namespaced by the SDK (e.g. `private-plugin:my-skill`).
+
+## Custom MCP Tools
+
+`tools.py` defines an in-process MCP server with custom tools available to the agent.
+Tools are defined at module level with `@tool` and registered in `build_clawless_mcp_server()`.
+To add a new tool: define it with `@tool` in `tools.py`, then add it to the `tools=[]` list.
+
+### send_message
+
+The **only way** the agent communicates with the user. A system prompt instructs the
+agent to always use this tool for replies. The tool handler calls `channel.send()` as
+a side effect. Per-request context (channel, sender) is set via `set_context()` before
+each query. If the agent fails to use the tool, a warning is logged and the SDK's final
+result text is sent as a fallback.
 
 ## Docker Deployment
 
