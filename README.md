@@ -6,7 +6,7 @@ Minimal self-hosted personal AI assistant connecting messaging channels to the [
 
 The Claude Agent SDK now ships with sessions, memory, skills, hooks, MCP servers, and context compaction built in. The middleware frameworks that existed before these features landed are no longer necessary. Clawless is the minimal glue — a few hundred lines of Python, a Dockerfile, and your private config — to turn the SDK into a personal assistant reachable via messaging.
 
-The app is fully open source. All personalization — identity, skills, credentials, conversation history — lives outside the repo, injected at runtime via a single bind mount. Fork the repo, mount your own config, and you have your own assistant.
+The app is fully open source. All personalization — identity, skills, credentials, conversation history — lives outside the repo, injected at runtime via a single bind mount. Clone the repo, mount your own config, and you have your own assistant to runwith docker.
 
 ## What you get
 
@@ -41,8 +41,7 @@ Messaging Platform ──webhook──> Channel ──fire-and-forget──> Age
 
 ### Prerequisites
 
-*   Python 3.13+
-*   [uv](https://docs.astral.sh/uv/) (recommended) or pip
+*   Docker and Docker Compose
 *   An [Anthropic API key](https://console.anthropic.com/) or Claude subscription credentials
 *   For WhatsApp: a [Twilio](https://www.twilio.com/) account with WhatsApp sandbox or number
 
@@ -51,6 +50,7 @@ Messaging Platform ──webhook──> Channel ──fire-and-forget──> Age
 ```
 pip install .                     # or: uv pip install .
 clawless-init ~/my-data           # scaffold the home directory structure
+# edit ~/my-data/data/config.toml — configure at least one channel
 ```
 
 This creates the following structure:
@@ -88,12 +88,6 @@ whatsapp_from = "whatsapp:+14155238886"
 public_url = "https://your-domain.ngrok-free.app"
 ack_message = "Thinking..."
 allowed_senders = ["whatsapp:+1234567890"]
-```
-
-### Run locally
-
-```
-ANTHROPIC_API_KEY=sk-... clawless
 ```
 
 ### Run with Docker
@@ -205,11 +199,11 @@ Use `-s` to see agent responses printed during integration tests. Integration te
 Phase 1 (MVP) is complete — core loop, WhatsApp channel, session persistence, Docker deployment, and three tiers of tests are all working.
 
 | Phase | Status | Scope |
-|-------|--------|-------|
-| 1. Core loop (MVP) | **Complete** | FastAPI + Agent SDK, WhatsApp channel, session persistence, Docker, test suite |
-| 2. Media & channels | Planned | Multimodal input, additional channels (Telegram, etc.), MCP server integrations |
-| 3. Scheduling | Planned | Proactive messages, daily briefings, reminders |
-| 4. Hardening | Planned | Health checks, cost tracking, backup strategy |
+| --- | --- | --- |
+| 1\. Core loop (MVP) | **Complete** | FastAPI + Agent SDK, WhatsApp channel, session persistence, Docker, test suite |
+| 2\. Media & channels | Planned | Multimodal input, additional channels (Telegram, etc.), MCP server integrations |
+| 3\. Scheduling | Planned | Proactive messages, daily briefings, reminders |
+| 4\. Hardening | Planned | Health checks, cost tracking, backup strategy |
 
 See [docs/specs/SPEC.md](docs/specs/SPEC.md) for the full design spec and research notes.
 
