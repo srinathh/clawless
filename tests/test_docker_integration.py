@@ -135,6 +135,7 @@ def test_scripted_messages_get_responses(docker_service):
     r = httpx.get(f"{base_url}/test/responses", timeout=5)
     responses = r.json()["responses"]
     assert len(responses) == 2
-    for resp in responses:
+    for i, resp in enumerate(responses):
+        print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"]  # non-empty response from agent
         assert resp["to"] == "test:user1"

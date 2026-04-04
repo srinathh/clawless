@@ -78,6 +78,7 @@ async def test_scripted_messages_get_responses(client):
     r = await client.get("/test/responses")
     responses = r.json()["responses"]
     assert len(responses) == 2
-    for resp in responses:
+    for i, resp in enumerate(responses):
+        print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"]  # non-empty response from agent
         assert resp["to"] == "test:user1"
