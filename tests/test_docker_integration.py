@@ -138,4 +138,5 @@ def test_scripted_messages_get_responses(docker_service):
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"]  # non-empty response from agent
+        assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
         assert resp["to"] == "test:user1"

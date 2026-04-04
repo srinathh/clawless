@@ -6,6 +6,7 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,6 +39,12 @@ async def client():
     run_dir = (PROJECT_ROOT / "data" / ts).resolve()
     init_home(run_dir)
     (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
+
+    # Copy credentials from real home so the SDK can authenticate
+    real_home = Path.home()
+    real_creds = real_home / ".claude" / ".credentials.json"
+    if real_creds.is_file():
+        shutil.copy2(real_creds, run_dir / ".claude" / ".credentials.json")
 
     old_home = os.environ.get("HOME")
     os.environ["HOME"] = str(run_dir)
@@ -81,4 +88,5 @@ async def test_scripted_messages_get_responses(client):
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"]  # non-empty response from agent
+        assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
         assert resp["to"] == "test:user1"
