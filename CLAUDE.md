@@ -35,18 +35,40 @@ src/clawless/
 
 ## Running tests
 
-Tests create isolated home dirs under `./data/<uuid>/` and set `HOME` to point there:
+Tests create isolated home dirs under `./data/<timestamp>/` and set `HOME` to point there.
+Requires `ANTHROPIC_API_KEY` env var or `~/.claude/.credentials.json` for integration tests.
 
 ```bash
-uv run pytest tests/ -v                           # all tests
-uv run pytest tests/test_config.py -v              # unit tests only (fast, no API key needed)
-uv run pytest tests/test_channel_integration.py -v # integration (needs Claude API key)
+# Unit tests (fast, no API key needed)
+uv run pytest tests/test_config.py -v
+
+# Host integration test (runs app in-process, ~2 min)
+uv run pytest tests/test_channel_integration.py -v -s
+
+# Docker integration test (builds image, runs via docker compose, ~2-3 min)
+# Skipped by default — must be explicitly requested with -m docker
+uv run pytest -m docker tests/test_docker_integration.py -v -s
+
+# All tests except Docker
+uv run pytest tests/ -v -s
+
+# Everything including Docker
+uv run pytest -m '' tests/ -v -s
 ```
 
+Use `-s` to see agent responses printed during integration tests.
+
 ## Docker
+
+Two auth modes — set one or the other:
 
 ```bash
 clawless-init ~/my-data          # scaffold home structure on host
 # edit ~/my-data/data/config.toml
+
+# Option 1: API key
 CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
+
+# Option 2: Claude credentials file (subscription auth)
+CLAWLESS_HOST_DIR=~/my-data CLAUDE_CREDENTIALS_FILE=~/.claude/.credentials.json docker compose up
 ```
