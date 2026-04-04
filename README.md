@@ -202,8 +202,9 @@ Phase 1 (MVP) is complete — core loop, WhatsApp channel, session persistence, 
 | --- | --- | --- |
 | 1\. Core loop (MVP) | **Complete** | FastAPI + Agent SDK, WhatsApp channel, session persistence, Docker, test suite |
 | 2\. Media & channels | Planned | Multimodal input, additional channels (Telegram, etc.), MCP server integrations |
-| 3\. Scheduling | Planned | Proactive messages, daily briefings, reminders |
-| 4\. Hardening | Planned | Health checks, cost tracking, backup strategy |
+| 3\. Hardening | Planned | Health checks, cost tracking, backup strategy |
+
+Scheduling and proactive messaging are already available via Claude Code's built-in `/loop` and `/schedule` skills — no custom implementation needed.
 
 See [docs/specs/SPEC.md](docs/specs/SPEC.md) for the full design spec and research notes.
 
