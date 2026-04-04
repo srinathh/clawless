@@ -89,7 +89,7 @@ def docker_service():
             if r.status_code == 200:
                 healthy = True
                 break
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
             pass
         time.sleep(5)
 
@@ -128,6 +128,7 @@ def test_scripted_messages_get_responses(docker_service):
             break
         time.sleep(5)
 
+    assert status is not None, "No status received from test channel"
     assert status["done"] is True, f"Test channel did not finish: {status}"
     assert status["error"] is None, f"Test channel error: {status['error']}"
 
