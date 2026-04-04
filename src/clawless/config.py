@@ -77,6 +77,7 @@ class ClaudeConfig(BaseModel):
     max_turns: int = 30
     max_budget_usd: float = 1.0
     max_concurrent_requests: int = 3
+    request_timeout: float = 300.0
 
 
 class TwilioWhatsAppConfig(BaseModel):

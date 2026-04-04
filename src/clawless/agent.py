@@ -7,18 +7,18 @@ locking and session persistence across restarts.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from claude_agent_sdk import (
-    AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    SdkPluginConfig,
     SystemMessage,
 )
+from sqlitedict import SqliteDict
 
 from clawless.channels.base import Channel, InboundMessage
 from clawless.config import ClaudeConfig
@@ -48,50 +48,23 @@ class AgentManager:
         self._clients: dict[str, _SessionClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._concurrency_gate = asyncio.Semaphore(config.max_concurrent_requests)
-
-        # Persistent mapping: session_key → CLI session UUID
-        self._session_map_path = data_dir / "claude_sessions.json"
-        self._session_map = self._load_session_map()
-
-    # ------------------------------------------------------------------
-    # Session map persistence
-    # ------------------------------------------------------------------
-
-    def _load_session_map(self) -> dict[str, str]:
-        if self._session_map_path.exists():
-            try:
-                return json.loads(self._session_map_path.read_text())
-            except (json.JSONDecodeError, OSError):
-                logger.warning("Corrupt session map, starting fresh")
-        return {}
-
-    def _save_session_map(self) -> None:
-        self._session_map_path.parent.mkdir(parents=True, exist_ok=True)
-        self._session_map_path.write_text(json.dumps(self._session_map))
-
-    def _record_session(self, session_key: str, cli_session_id: str) -> None:
-        self._session_map[session_key] = cli_session_id
-        self._save_session_map()
+        self._session_map = SqliteDict(str(data_dir / "sessions.db"), autocommit=True)
 
     # ------------------------------------------------------------------
     # Client lifecycle
     # ------------------------------------------------------------------
 
     def _build_options(self, session_key: str) -> ClaudeAgentOptions:
-        plugins = [
-            {"type": "local", "path": p} for p in self._plugins if p
+        plugins: list[SdkPluginConfig] = [
+            SdkPluginConfig(type="local", path=p) for p in self._plugins if p
         ]
         options = ClaudeAgentOptions(
-            allowed_tools=[
-                "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-                "WebSearch", "WebFetch",
-            ],
             permission_mode="bypassPermissions",
             max_turns=self._config.max_turns,
             max_budget_usd=self._config.max_budget_usd,
             setting_sources=["user", "project"],
             cwd=str(self._workspace),
-            **({"plugins": plugins} if plugins else {}),
+            plugins=plugins,
         )
         # Resume existing session if we have a persisted mapping
         cli_session_id = self._session_map.get(session_key)
@@ -109,10 +82,12 @@ class AgentManager:
         options = self._build_options(session_key)
         client = ClaudeSDKClient(options=options)
         await client.__aenter__()
-
-        cli_session_id = self._session_map.get(session_key)
-        sc = _SessionClient(client=client, session_id=cli_session_id)
-        self._clients[session_key] = sc
+        try:
+            sc = _SessionClient(client=client, session_id=self._session_map.get(session_key))
+            self._clients[session_key] = sc
+        except Exception:
+            await client.__aexit__(None, None, None)
+            raise
         return sc
 
     async def _close_client(self, session_key: str) -> None:
@@ -122,7 +97,6 @@ class AgentManager:
                 await sc.client.__aexit__(None, None, None)
             except Exception:
                 logger.debug("Error closing client for %s", session_key)
-        self._locks.pop(session_key, None)
 
     # ------------------------------------------------------------------
     # Message processing
@@ -141,25 +115,40 @@ class AgentManager:
         async with lock, self._concurrency_gate:
             try:
                 sc = await self._get_or_create_client(sender)
-                final_content = ""
 
-                prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
-                await sc.client.query(prompt)
-                async for msg in sc.client.receive_response():
-                    if isinstance(msg, SystemMessage) and msg.subtype == "init":
-                        new_id = msg.data.get("session_id")
-                        if new_id and new_id != sc.session_id:
-                            sc.session_id = new_id
-                            self._record_session(sender, new_id)
+                async def _run_query() -> str:
+                    prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
+                    await sc.client.query(prompt)
+                    content = ""
+                    async for msg in sc.client.receive_response():
+                        if isinstance(msg, SystemMessage) and msg.subtype == "init":
+                            new_id = msg.data.get("session_id")
+                            if new_id and new_id != sc.session_id:
+                                sc.session_id = new_id
+                                self._session_map[sender] = new_id
+                        elif isinstance(msg, ResultMessage):
+                            if msg.result:
+                                content = msg.result
+                        else:
+                            logger.debug("Unhandled message: %s", type(msg).__name__)
+                    return content
 
-                    elif isinstance(msg, ResultMessage):
-                        if msg.result:
-                            final_content = msg.result
+                final_content = await asyncio.wait_for(
+                    _run_query(), timeout=self._config.request_timeout
+                )
 
                 if not final_content:
                     final_content = "Done — no text response."
 
                 await channel.send(sender, text=final_content)
+
+            except asyncio.TimeoutError:
+                logger.error("SDK call timed out for %s", sender)
+                await self._close_client(sender)
+                try:
+                    await channel.send(sender, text="Sorry, the request timed out.")
+                except Exception:
+                    logger.exception("Failed to send timeout message to %s", sender)
 
             except Exception:
                 logger.exception("Error processing message for %s", sender)
@@ -175,6 +164,7 @@ class AgentManager:
     # ------------------------------------------------------------------
 
     async def close_all(self) -> None:
-        """Close all active clients."""
+        """Close all active clients and the session store."""
         for key in list(self._clients):
             await self._close_client(key)
+        self._session_map.close()
