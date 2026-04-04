@@ -54,9 +54,10 @@ async def send_message(args):
     sender = _ctx["sender"]
     if not channel or not sender:
         return {"content": [{"type": "text", "text": "Error: no channel context"}], "is_error": True}
+    logger.debug("send_message tool called for %s: text=%r, media=%r", sender, text[:200], media)
     await channel.send(sender, text=text, media=media or None)
     _ctx["sent_in_turn"] = True
-    logger.info("send_message: sent to %s (%d chars, %d media)", sender, len(text), len(media))
+    logger.debug("send_message tool done for %s: sent_in_turn=True", sender)
     media_info = f" with {len(media)} attachments" if media else ""
     return {"content": [{"type": "text", "text": f"Message sent{media_info}"}]}
 

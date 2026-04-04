@@ -12,7 +12,8 @@ from clawless.agent import AgentManager
 from clawless.channels.whatsapp import TwilioWhatsAppChannel
 from clawless.config import ClawlessPaths, Settings
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
+# TODO: revert to INFO after debugging send_message issue
 logger = logging.getLogger(__name__)
 
 

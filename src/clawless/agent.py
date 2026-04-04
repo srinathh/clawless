@@ -128,34 +128,44 @@ class AgentManager:
 
         async with lock, self._concurrency_gate:
             try:
+                logger.debug("Processing message for %s: %r", sender, message.content[:200])
                 sc = await self._get_or_create_client(sender)
                 set_context(channel, sender)
+                logger.debug("Context set for %s, starting query", sender)
 
                 async def _run_query() -> str:
                     prompt = f"{TOOL_SYSTEM_PROMPT}\n\n[{channel.formatting_instructions}]\n\n{message.content}"
                     await sc.client.query(prompt)
+                    logger.debug("Query submitted for %s, receiving response", sender)
                     content = ""
                     async for msg in sc.client.receive_response():
+                        logger.debug("SDK message for %s: %s", sender, type(msg).__name__)
                         if isinstance(msg, SystemMessage) and msg.subtype == "init":
                             new_id = msg.data.get("session_id")
                             if new_id and new_id != sc.session_id:
                                 sc.session_id = new_id
                                 self._session_map[sender] = new_id
                         elif isinstance(msg, ResultMessage):
+                            logger.debug("ResultMessage for %s: %r", sender, msg.result[:200] if msg.result else None)
                             if msg.result:
                                 content = msg.result
                         else:
-                            logger.debug("Unhandled message: %s", type(msg).__name__)
+                            logger.debug("Unhandled message for %s: %s", sender, type(msg).__name__)
                     return content
 
                 final_content = await asyncio.wait_for(
                     _run_query(), timeout=self._config.request_timeout
                 )
 
-                if not was_sent_in_turn():
-                    logger.warning("Agent did not use send_message tool for %s", sender)
-                    if final_content:
-                        await channel.send(sender, text=final_content)
+                logger.debug(
+                    "Query complete for %s: sent_in_turn=%s, final_content=%r",
+                    sender, was_sent_in_turn(), final_content[:200] if final_content else None,
+                )
+                # TODO: re-enable fallback after debugging "Message sent to the user" issue
+                # if not was_sent_in_turn():
+                #     logger.warning("Agent did not use send_message tool for %s", sender)
+                #     if final_content:
+                #         await channel.send(sender, text=final_content)
 
             except asyncio.TimeoutError:
                 logger.error("SDK call timed out for %s", sender)
