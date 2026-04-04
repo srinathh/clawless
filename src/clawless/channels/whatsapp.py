@@ -165,10 +165,13 @@ class TwilioWhatsAppChannel(Channel):
 
     def _stage_media(self, local_path: str) -> str | None:
         """Copy a local file to the outbound dir and return its public URL."""
-        src = Path(local_path).expanduser()
+        src = Path(local_path).expanduser().resolve()
         if not src.is_file():
             logger.warning("Media file not found: %s", local_path)
             return None
+        # If the file is already in the outbound dir, just serve it directly
+        if src.parent == self._outbound_media_dir.resolve():
+            return f"{self._config.public_url}{WEBHOOK_PATH}/media/{src.name}"
         filename = f"{uuid.uuid4().hex}{src.suffix}"
         shutil.copy2(src, self._outbound_media_dir / filename)
         return f"{self._config.public_url}{WEBHOOK_PATH}/media/{filename}"
