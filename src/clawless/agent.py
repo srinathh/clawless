@@ -26,11 +26,24 @@ from clawless.tools import build_clawless_mcp_server, set_context, was_sent_in_t
 
 logger = logging.getLogger(__name__)
 
-TOOL_SYSTEM_PROMPT = """\
+FRAMEWORK_SYSTEM_PROMPT = """\
 You MUST use the send_message tool for ALL communication with the user.
 Your final text response is NOT delivered — only send_message calls reach the user.
 Always call send_message at least once per turn with your reply.
-For media/files, include local file paths in the media parameter."""
+
+Your working directory is ~/workspace/. You have all Claude Code tools available \
+with bypass permissions.
+
+## Media handling
+- Inbound media from users arrives as `[mime/type: /path/to/file]` tags in the \
+message text. Files are stored under ~/workspace/media/inbound/. You can read \
+image files directly since you are multimodal.
+- To send media/files to the user: pass local file paths in the send_message \
+tool's media parameter. The channel will stage and serve them automatically.
+
+## Plugin
+A plugin at ~/plugin/ may provide additional skills, agents, commands, and hooks. \
+Check ~/plugin/skills/ for available skills if relevant to a task."""
 
 
 @dataclass
@@ -67,6 +80,11 @@ class AgentManager:
             SdkPluginConfig(type="local", path=p) for p in self._plugins if p
         ]
         options = ClaudeAgentOptions(
+            system_prompt={
+                "type": "preset",
+                "preset": "claude_code",
+                "append": FRAMEWORK_SYSTEM_PROMPT,
+            },
             permission_mode="bypassPermissions",
             max_turns=self._config.max_turns,
             max_budget_usd=self._config.max_budget_usd,
@@ -134,7 +152,7 @@ class AgentManager:
                 logger.debug("Context set for %s, starting query", sender)
 
                 async def _run_query() -> str:
-                    prompt = f"{TOOL_SYSTEM_PROMPT}\n\n[{channel.formatting_instructions}]\n\n{message.content}"
+                    prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
                     await sc.client.query(prompt)
                     logger.debug("Query submitted for %s, receiving response", sender)
                     content = ""

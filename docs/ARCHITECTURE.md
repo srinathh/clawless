@@ -51,8 +51,10 @@ from `~/data/config.toml`.
 **CLAUDE.md files**: `clawless-init` scaffolds two CLAUDE.md files loaded by the SDK
 via `setting_sources=["user", "project"]`. User-level (`~/.claude/CLAUDE.md`) defines
 the agent's identity and communication style. Project-level (`~/workspace/.claude/CLAUDE.md`)
-describes the workspace layout, media handling, and plugin system. Both are written
-only if they don't already exist, so user customizations survive re-runs of init.
+is a minimal stub for user customization — framework internals (workspace paths, media
+handling, plugin info, send_message usage) are in the `system_prompt` parameter instead.
+Both are written only if they don't already exist, so user customizations survive re-runs
+of init.
 
 ## Configuration
 
@@ -92,6 +94,7 @@ Each SDK client is configured with:
 
 | Option | Value |
 |--------|-------|
+| `system_prompt` | `{"type": "preset", "preset": "claude_code", "append": FRAMEWORK_SYSTEM_PROMPT}` |
 | `cwd` | `~/workspace` |
 | `permission_mode` | `bypassPermissions` (requires non-root user) |
 | `setting_sources` | `["user", "project"]` |
@@ -100,13 +103,24 @@ Each SDK client is configured with:
 | `mcp_servers` | `{"clawless": <in-process MCP server>}` with `send_message` tool |
 | `allowed_tools` | Built-in SDK tools + `mcp__clawless__*` (MCP tools require explicit allowlisting) |
 
+### Two-Layer Prompt Design
+
+Framework instructions are split into two layers:
+
+- **`system_prompt`** (in code, not user-editable): Framework internals — send_message
+  tool usage, workspace paths, media handling, plugin info. Uses `SystemPromptPreset`
+  with `preset="claude_code"` to preserve built-in Claude Code tool instructions,
+  appending framework-specific instructions via the `append` field.
+- **CLAUDE.md** (user-editable): Identity, personality, communication style (user-level),
+  and project-specific instructions (project-level). Loaded via `setting_sources`.
+
 ### Message Processing Flow
 
 1. Channel webhook receives message, creates `InboundMessage`
 2. Fires `asyncio.create_task(agent.process_message(msg, channel))` — non-blocking
 3. AgentManager acquires per-sender lock + semaphore slot
 4. Sets tool context (`set_context(channel, sender)`) for the `send_message` MCP tool
-5. Builds prompt with system instructions + channel formatting + user content
+5. Builds prompt with channel formatting instructions + user content
 6. Sends to Claude via SDK, streams response (with `request_timeout` guard)
 7. Captures session ID from `SystemMessage.init`, persists to sqlitedict
 8. Agent uses `send_message` tool to deliver replies via `channel.send()`
@@ -181,8 +195,8 @@ To add a new tool: define it with `@tool` in `tools.py`, then add it to the `too
 
 ### send_message
 
-The **only way** the agent communicates with the user. A system prompt instructs the
-agent to always use this tool for replies. The tool handler calls `channel.send()` as
+The **only way** the agent communicates with the user. The `system_prompt` parameter
+instructs the agent to always use this tool for replies. The tool handler calls `channel.send()` as
 a side effect. Per-request context (channel, sender) is set via `set_context()` before
 each query. If the agent fails to use the tool, a warning is logged and the SDK's final
 result text is sent as a fallback.

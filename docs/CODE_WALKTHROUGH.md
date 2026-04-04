@@ -59,8 +59,9 @@ The core of the system. `AgentManager` manages one `ClaudeSDKClient` per sender.
 **Session persistence**:
 - `_session_map: SqliteDict` at `data_dir/sessions.db`, autocommit enabled
 - Maps sender string -> CLI session UUID
-- On client creation, `_build_options()` checks for a persisted session and sets
-  `ClaudeAgentOptions.resume` to resume it
+- On client creation, `_build_options()` sets `system_prompt` using a `claude_code`
+  preset with framework-specific instructions appended, and checks for a persisted
+  session to set `ClaudeAgentOptions.resume`
 - New session IDs arrive via `SystemMessage` with `subtype == "init"` during
   response streaming, and are persisted immediately
 
@@ -163,7 +164,7 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 
 **Templates** (written only if file doesn't exist):
 - `USER_CLAUDE_MD_TEMPLATE` — agent identity and communication style (`~/.claude/CLAUDE.md`)
-- `PROJECT_CLAUDE_MD_TEMPLATE` — workspace and capabilities (`~/workspace/.claude/CLAUDE.md`)
+- `PROJECT_CLAUDE_MD_TEMPLATE` — minimal stub for user customization (`~/workspace/.claude/CLAUDE.md`)
 - `CONFIG_TEMPLATE` — skeleton config.toml with all channel options commented out
 
 **`init_home(path)`** creates:

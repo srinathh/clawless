@@ -26,26 +26,7 @@ You are a personal AI assistant running on the Clawless framework. Users reach y
 PROJECT_CLAUDE_MD_TEMPLATE = """\
 # Workspace
 
-Your working directory is ~/workspace/. You have all Claude Code tools available with unrestricted permissions.
-
-## Media
-
-Inbound media from users arrives as `[mime/type: /path/to/file]` tags in the message text. The files are stored under ~/workspace/media/inbound/. You can read image files directly since you are multimodal.
-
-Outbound media: save files to ~/workspace/media/outbound/ and include the local path in your response. The channel will stage and serve them automatically.
-
-## Plugin
-
-A plugin at ~/plugin/ may provide additional skills, agents, commands, and hooks. Check ~/plugin/skills/ for available skills if relevant to a task.
-
-## Sending messages
-
-Use the send_message tool for ALL replies to the user. Your final text response
-is NOT delivered directly — only send_message calls reach the user.
-
-- send_message(text="Here's your answer...") — reply to the user
-- send_message(text="Here's the file", media=["/path/to/file.png"]) — with attachment
-- send_message(text="Working on it...") then send_message(text="Done!") — multiple messages
+This is your working directory. See ~/plugin/skills/ for available skills.
 """
 
 CONFIG_TEMPLATE = """\
