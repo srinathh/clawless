@@ -1,7 +1,7 @@
 """Configuration from env vars, .env file, and optional TOML.
 
 All paths are derived from Path.home() — see ClawlessPaths.
-Config sources (highest priority wins): env vars > .env file > ~/data/config.toml.
+Config sources (highest priority wins): env vars > .env file > ~/clawless.toml.
 Environment variables use __ as the nesting separator (e.g. CLAUDE__MAX_TURNS=10).
 """
 
@@ -117,7 +117,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        toml_file = str(Path.home() / "data" / "config.toml")
+        toml_file = str(Path.home() / "clawless.toml")
         return (
             env_settings,
             dotenv_settings,

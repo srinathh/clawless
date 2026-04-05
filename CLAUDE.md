@@ -29,7 +29,7 @@ src/clawless/
 ## Key conventions
 
 - All paths derive from `Path.home()` via `ClawlessPaths` — no configurable path fields
-- Config sources (highest priority wins): env vars > `.env` file > `~/data/config.toml` (all optional)
+- Config sources (highest priority wins): env vars > `.env` file > `~/clawless.toml` (all optional)
 - `ANTHROPIC_API_KEY` is required — validated by pydantic-settings at startup
 - Sender IDs are channel-namespaced (e.g. `whatsapp:+1234567890`, `test:user1`)
 - The `~/plugin/` directory is a single Claude Code plugin, not a container of multiple plugins
@@ -71,7 +71,7 @@ Show the full agent responses to the user so they can review them.
 
 ```
 clawless-init ~/my-data          # scaffold home structure on host
-# edit ~/my-data/data/config.toml
+# edit ~/my-data/clawless.toml
 # set ANTHROPIC_API_KEY in .env or environment
 
 CLAWLESS_HOST_DIR=~/my-data docker compose up

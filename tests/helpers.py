@@ -9,12 +9,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 TOML_CONFIG = """
 [claude]
-max_turns = 5
-max_budget_usd = 0.50
+max_turns = 8
+max_budget_usd = 1.00
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done."]
+messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done."]
 """
 
 
@@ -24,7 +24,7 @@ def create_test_home(prefix: str = "") -> Path:
     name = f"{prefix}_{ts}" if prefix else ts
     run_dir = (PROJECT_ROOT / "data" / name).resolve()
     init_home(run_dir)
-    (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
+    (run_dir / "clawless.toml").write_text(TOML_CONFIG)
     return run_dir
 
 
@@ -34,7 +34,7 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
     Prints each response, validates basics, checks tool usage marker,
     and verifies the agent created test.txt in the workspace.
     """
-    assert len(responses) >= 4
+    assert len(responses) >= 5
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"], f"Response {i + 1} is empty"
@@ -54,3 +54,9 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
     assert test_file.read_text().strip() == "test", (
         f"Expected 'test' in {test_file}, got: {test_file.read_text()!r}"
     )
+
+    # Verify skill created in standalone dir, not plugin dir (fifth scripted message)
+    skill_file = run_dir / "workspace" / ".claude" / "skills" / "greet" / "SKILL.md"
+    assert skill_file.exists(), f"Agent did not create skill at {skill_file}"
+    plugin_skill = run_dir / "plugin" / "skills" / "greet" / "SKILL.md"
+    assert not plugin_skill.exists(), f"Agent wrongly created skill in plugin dir at {plugin_skill}"

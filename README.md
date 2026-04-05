@@ -50,7 +50,7 @@ Messaging Platform ──webhook──> Channel ──fire-and-forget──> Age
 ```
 pip install .                     # or: uv pip install .
 clawless-init ~/my-data           # scaffold the home directory structure
-# edit ~/my-data/data/config.toml — configure at least one channel
+# edit ~/my-data/clawless.toml — configure at least one channel
 ```
 
 This creates the following structure:
@@ -58,10 +58,13 @@ This creates the following structure:
 ```
 ~/my-data/
 ├── workspace/              # Agent's working directory
-│   └── .claude/CLAUDE.md   # Agent instructions and SDK config (editable)
-├── data/
-│   └── config.toml         # Channel and agent configuration
-└── plugin/                 # Custom skills, hooks, commands
+│   └── .claude/            # Standalone skills, agents, SDK config
+│       ├── CLAUDE.md       # Agent instructions (editable)
+│       ├── skills/         # Bot-created skills (writable)
+│       └── agents/         # Bot-created agents (writable)
+├── data/                   # Runtime state (sessions)
+├── clawless.toml           # Channel and agent configuration
+└── plugin/                 # Pre-configured plugin (read-only in Docker)
     ├── .claude-plugin/plugin.json
     ├── skills/
     ├── agents/
@@ -71,7 +74,7 @@ This creates the following structure:
 
 ### Configure
 
-Edit `~/my-data/data/config.toml`:
+Edit `~/my-data/clawless.toml`:
 
 ```
 [claude]
@@ -96,7 +99,7 @@ CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
 
 ## Configuration
 
-Configuration is loaded from `~/data/config.toml` with environment variable overrides using `__` as the nesting delimiter (e.g. `CLAUDE__MAX_TURNS=10`).
+Configuration is loaded from `~/clawless.toml` with environment variable overrides using `__` as the nesting delimiter (e.g. `CLAUDE__MAX_TURNS=10`).
 
 | Setting | Default | Description |
 | --- | --- | --- |

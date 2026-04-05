@@ -44,9 +44,21 @@ image files directly since you are multimodal.
 - To send media/files to the user: pass local file paths in the send_message \
 tool's media parameter. The channel will stage and serve them automatically.
 
-## Plugin
-A plugin at ~/plugin/ may provide additional skills, agents, commands, and hooks. \
-Check ~/plugin/skills/ for available skills if relevant to a task."""
+## Skills, agents, and plugins
+
+Two locations provide extensibility:
+
+1. **~/workspace/.claude/** — YOUR writable project directory. When asked to create, \
+modify, or delete skills, agents, or MCP configs, use this directory:
+   - Skills: ~/workspace/.claude/skills/<skill-name>/SKILL.md (invoked as /<skill-name>)
+   - Agents: ~/workspace/.claude/agents/<agent-name>.md
+   - MCP servers: ~/workspace/.claude/.mcp.json
+
+2. **~/plugin/** — Pre-configured plugin (READ-ONLY). The user has placed skills, \
+agents, commands, hooks, and MCP servers here before deployment. Never write to \
+this directory. Plugin skills are invoked as /private-plugin:<skill-name>.
+
+Check both locations when looking for available skills and agents."""
 
 
 @dataclass

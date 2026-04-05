@@ -9,7 +9,7 @@ All paths and settings originate here.
 
 **ClawlessPaths** derives every path from `Path.home()`:
 - `workspace` — `~/workspace` (agent's cwd)
-- `data_dir` — `~/data` (config.toml, sessions.db)
+- `data_dir` — `~/data` (sessions.db)
 - `plugin_dir` — `~/plugin` (Claude Code plugin)
 - `media_dir` — `~/workspace/media` (runtime artifact, auto-created)
 
@@ -21,7 +21,7 @@ Constructor calls `_validate()` which checks that `workspace`, `data_dir`, and
 priority order:
 1. Environment variables (with `__` as nesting delimiter, e.g. `CLAUDE__MAX_TURNS=10`)
 2. `.env` file in CWD (gracefully ignored if missing)
-3. TOML file at `~/data/config.toml` (gracefully ignored if missing)
+3. TOML file at `~/clawless.toml` (gracefully ignored if missing)
 
 This is configured in `settings_customise_sources()` which returns
 `(env_settings, dotenv_settings, toml_source)`.
@@ -165,7 +165,7 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 
 **Templates** (written only if file doesn't exist):
 - `PROJECT_CLAUDE_MD_TEMPLATE` — agent identity, communication style, and workspace context (`~/workspace/.claude/CLAUDE.md`)
-- `CONFIG_TEMPLATE` — skeleton config.toml with all channel options commented out
+- `CONFIG_TEMPLATE` — skeleton clawless.toml with all channel options commented out
 
 **`init_home(path)`** creates:
 - `workspace/`, `data/` directories

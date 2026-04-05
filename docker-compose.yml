@@ -5,7 +5,10 @@ services:
       - "${PORT:-18265}:${PORT:-18265}"
     volumes:
       # Host dir created by: clawless-init /path/to/my/data
-      - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR to the host path created by clawless-init}:/home/clawless:rw
+      - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR}/workspace:/home/clawless/workspace:rw
+      - ${CLAWLESS_HOST_DIR}/data:/home/clawless/data:rw
+      - ${CLAWLESS_HOST_DIR}/clawless.toml:/home/clawless/clawless.toml:ro
+      - ${CLAWLESS_HOST_DIR}/plugin:/home/clawless/plugin:ro
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PORT: ${PORT:-18265}

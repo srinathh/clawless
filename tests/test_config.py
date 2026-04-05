@@ -18,7 +18,7 @@ def _setup_home(toml_content: str) -> tuple[Path, str | None]:
     """Create an isolated home dir under ./data/<uuid>/ and set HOME."""
     run_dir = (PROJECT_ROOT / "data" / str(uuid.uuid4())).resolve()
     init_home(run_dir)
-    (run_dir / "data" / "config.toml").write_text(toml_content)
+    (run_dir / "clawless.toml").write_text(toml_content)
     old_home = os.environ.get("HOME")
     os.environ["HOME"] = str(run_dir)
     return run_dir, old_home
@@ -62,10 +62,10 @@ def test_clawless_paths_raises_on_missing_dirs():
 
 
 def test_clawless_paths_ok_without_config_toml():
-    """ClawlessPaths succeeds even when config.toml is missing."""
+    """ClawlessPaths succeeds even when clawless.toml is missing."""
     run_dir = (PROJECT_ROOT / "data" / str(uuid.uuid4())).resolve()
     init_home(run_dir)
-    (run_dir / "data" / "config.toml").unlink()  # remove the file
+    (run_dir / "clawless.toml").unlink()  # remove the file
     old_home = os.environ.get("HOME")
     os.environ["HOME"] = str(run_dir)
     try:
@@ -76,7 +76,7 @@ def test_clawless_paths_ok_without_config_toml():
 
 
 def test_load_from_toml():
-    """Settings loads from ~/data/config.toml."""
+    """Settings loads from ~/clawless.toml."""
     toml_content = """
 [claude]
 max_turns = 10

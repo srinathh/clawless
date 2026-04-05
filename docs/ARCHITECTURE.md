@@ -23,11 +23,13 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │   │   ├── inbound/        # Downloaded from messaging platforms
 │   │   └── outbound/       # Staged for sending via messaging platforms
 │   └── .claude/
-│       └── CLAUDE.md       # Agent instructions (identity, workspace, media, plugin)
-├── data/                   # Framework state. rw, NOT agent-accessible
-│   ├── config.toml         # App config (channels, claude options)
+│       ├── CLAUDE.md       # Agent instructions (identity, workspace, extensibility)
+│       ├── skills/         # Bot-created skills (standalone format, writable)
+│       └── agents/         # Bot-created agents (standalone format, writable)
+├── data/                   # Runtime state. rw, NOT agent-accessible
 │   └── sessions.db         # Session persistence via sqlitedict (auto-created)
-└── plugin/                 # Single plugin dir with prescribed structure
+├── clawless.toml           # App config (channels, claude options). ro in Docker
+└── plugin/                 # Single plugin dir with prescribed structure. ro in Docker
     ├── .claude-plugin/
     │   └── plugin.json
     ├── skills/
@@ -41,7 +43,7 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 path fields — everything is conventional.
 
 **Bootstrap**: Framework state lives in `~/data/` (invisible to the agent since
-`cwd=~/workspace`). Config is loaded from `~/data/config.toml`. SDK runtime state
+`cwd=~/workspace`). Config is loaded from `~/clawless.toml`. SDK runtime state
 (sessions) is redirected to `~/workspace/.claude/` via `CLAUDE_CONFIG_DIR`.
 
 **CLAUDE.md**: `clawless-init` scaffolds a single CLAUDE.md at
@@ -56,7 +58,7 @@ survive re-runs of init.
 `Settings` (pydantic-settings) loads config from three sources (highest priority wins):
 1. Environment variables (with `__` as nesting delimiter, e.g. `CLAUDE__MAX_TURNS=10`)
 2. `.env` file in CWD (gracefully ignored if missing)
-3. `~/data/config.toml` (gracefully ignored if missing)
+3. `~/clawless.toml` (gracefully ignored if missing)
 
 ```
 Settings
@@ -210,7 +212,10 @@ Default port: 18265.
 
 ```yaml
 volumes:
-  - ${CLAWLESS_HOST_DIR}:/home/clawless:rw
+  - ${CLAWLESS_HOST_DIR}/workspace:/home/clawless/workspace:rw
+  - ${CLAWLESS_HOST_DIR}/data:/home/clawless/data:rw
+  - ${CLAWLESS_HOST_DIR}/clawless.toml:/home/clawless/clawless.toml:ro
+  - ${CLAWLESS_HOST_DIR}/plugin:/home/clawless/plugin:ro
 environment:
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   PORT: ${PORT:-18265}
@@ -221,7 +226,7 @@ environment:
 **Setup**:
 ```
 clawless-init ~/my-data
-# edit ~/my-data/data/config.toml
+# edit ~/my-data/clawless.toml
 # set ANTHROPIC_API_KEY in .env or environment
 CLAWLESS_HOST_DIR=~/my-data docker compose up
 ```

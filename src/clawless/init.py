@@ -25,12 +25,19 @@ through messaging channels (currently WhatsApp).
 
 ## Workspace
 
-Your working directory is ~/workspace/. See ~/plugin/skills/ for available skills.
+Your working directory is ~/workspace/.
+
+## Extensibility
+- To CREATE new skills, agents, or MCP configs: use ~/workspace/.claude/ (standalone format)
+  - Skills: ~/workspace/.claude/skills/<name>/SKILL.md
+  - Agents: ~/workspace/.claude/agents/<name>.md
+  - MCP servers: ~/workspace/.claude/.mcp.json
+- Pre-configured extensions from the user are in ~/plugin/ (read-only, do not modify)
 """
 
 CONFIG_TEMPLATE = """\
-# Clawless configuration — place at ~/data/config.toml
-# In Docker: /home/clawless/data/config.toml
+# Clawless configuration — place at ~/clawless.toml
+# In Docker: /home/clawless/clawless.toml
 
 [claude]
 max_turns = 30
@@ -71,6 +78,8 @@ def init_home(path: Path) -> None:
 
     # Workspace .claude directory for project-level SDK settings
     (path / "workspace" / ".claude").mkdir(parents=True, exist_ok=True)
+    (path / "workspace" / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+    (path / "workspace" / ".claude" / "agents").mkdir(parents=True, exist_ok=True)
 
     # CLAUDE.md — agent identity and workspace context (project-level only)
     project_claude_md = path / "workspace" / ".claude" / "CLAUDE.md"
@@ -78,7 +87,7 @@ def init_home(path: Path) -> None:
         project_claude_md.write_text(PROJECT_CLAUDE_MD_TEMPLATE)
 
     # Config template
-    config_dest = path / "data" / "config.toml"
+    config_dest = path / "clawless.toml"
     if not config_dest.exists():
         config_dest.write_text(CONFIG_TEMPLATE)
 
@@ -103,9 +112,12 @@ def main() -> None:
     print()
     print(f"  {path}/")
     print(f"  ├── workspace/              # Agent working directory (Claude SDK cwd)")
-    print(f"  │   └── .claude/CLAUDE.md   # Agent instructions and SDK config")
-    print(f"  ├── data/                   # Framework config and state")
-    print(f"  │   └── config.toml         # Edit this to configure channels")
-    print(f"  └── plugin/                 # Plugin directory (skills, agents, hooks)")
+    print(f"  │   └── .claude/            # Standalone skills, agents, SDK config")
+    print(f"  │       ├── CLAUDE.md       # Agent instructions")
+    print(f"  │       ├── skills/         # Bot-created skills (writable)")
+    print(f"  │       └── agents/         # Bot-created agents (writable)")
+    print(f"  ├── data/                   # Runtime state (sessions)")
+    print(f"  ├── clawless.toml           # Edit this to configure channels")
+    print(f"  └── plugin/                 # Pre-configured plugin (read-only in Docker)")
     print()
     print(f"For Docker: CLAWLESS_HOST_DIR={path} docker compose up")
