@@ -168,11 +168,11 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 - `CONFIG_TEMPLATE` — skeleton clawless.toml with all channel options commented out
 
 **`init_home(path)`** creates:
-- `workspace/`, `data/` directories
+- `.claude/`, `workspace/`, `data/` directories
 - Plugin skeleton: `.claude-plugin/plugin.json`, `skills/`, `agents/`, `commands/`, `hooks/`
-- `workspace/.claude/` for project-level SDK settings and runtime state
+- `workspace/.claude/` for project-level skills, agents, and config
 - CLAUDE.md template at project level
-- Config template in `data/`
+- Config template at top level
 
 Used by both the CLI command and test fixtures (which call `init_home()` directly).
 

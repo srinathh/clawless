@@ -48,7 +48,7 @@ Messaging Platform ──webhook──> Channel ──fire-and-forget──> Age
 ### Install and scaffold
 
 ```
-pip install .                     # or: uv pip install .
+uv sync                           # install dependencies from lock file
 clawless-init ~/my-data           # scaffold the home directory structure
 # edit ~/my-data/clawless.toml — configure at least one channel
 ```
@@ -57,12 +57,13 @@ This creates the following structure:
 
 ```
 ~/my-data/
+├── .claude/                # SDK runtime state (sessions, memory)
 ├── workspace/              # Agent's working directory
-│   └── .claude/            # Standalone skills, agents, SDK config
+│   └── .claude/            # Project-level skills, agents, config
 │       ├── CLAUDE.md       # Agent instructions (editable)
 │       ├── skills/         # Bot-created skills (writable)
 │       └── agents/         # Bot-created agents (writable)
-├── data/                   # Runtime state (sessions)
+├── data/                   # App runtime state (session map)
 ├── clawless.toml           # Channel and agent configuration
 └── plugin/                 # Pre-configured plugin (read-only in Docker)
     ├── .claude-plugin/plugin.json

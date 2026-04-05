@@ -10,10 +10,10 @@ _You don't need a claw._
 > some are deferred to later phases. Annotations like **[IMPLEMENTED]**, **[ANSWERED]**,
 > and **[DEFERRED]** mark the status of each section.
 >
-> **Note**: This spec references a two-directory layout (`~/.claude/` + `~/workspace/.claude/`)
-> and `setting_sources=["user", "project"]`. These have been consolidated —
-> `~/.claude/` no longer exists. All config and SDK runtime state now lives under
-> `~/workspace/.claude/` via `setting_sources=["project"]` + `CLAUDE_CONFIG_DIR`.
+> **Note**: This spec's two-directory layout (`~/.claude/` + `~/workspace/.claude/`)
+> and `setting_sources=["user", "project"]` matches the current implementation.
+> `~/.claude/` holds SDK runtime state (sessions, memory); `~/workspace/.claude/`
+> holds project-level config (CLAUDE.md, skills, agents).
 > See `docs/ARCHITECTURE.md` for the current layout.
 
 ## Overview

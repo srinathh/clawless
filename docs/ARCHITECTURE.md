@@ -18,6 +18,7 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 
 ```
 ~/
+├── .claude/                # SDK runtime state (sessions, memory). rw
 ├── workspace/              # Claude SDK cwd — agent operates here. rw
 │   ├── media/              # Channel media files (auto-created at runtime)
 │   │   ├── inbound/        # Downloaded from messaging platforms
@@ -26,7 +27,7 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │       ├── CLAUDE.md       # Agent instructions (identity, workspace, extensibility)
 │       ├── skills/         # Bot-created skills (standalone format, writable)
 │       └── agents/         # Bot-created agents (standalone format, writable)
-├── data/                   # Runtime state. rw, NOT agent-accessible
+├── data/                   # App runtime state. rw, NOT agent-accessible
 │   └── sessions.db         # Session persistence via sqlitedict (auto-created)
 ├── clawless.toml           # App config (channels, claude options). ro in Docker
 └── plugin/                 # Single plugin dir with prescribed structure. ro in Docker
@@ -44,10 +45,10 @@ path fields — everything is conventional.
 
 **Bootstrap**: Framework state lives in `~/data/` (invisible to the agent since
 `cwd=~/workspace`). Config is loaded from `~/clawless.toml`. SDK runtime state
-(sessions) is redirected to `~/workspace/.claude/` via `CLAUDE_CONFIG_DIR`.
+(sessions, memory) lives in `~/.claude/` (the default SDK location).
 
 **CLAUDE.md**: `clawless-init` scaffolds a single CLAUDE.md at
-`~/workspace/.claude/CLAUDE.md`, loaded by the SDK via `setting_sources=["project"]`.
+`~/workspace/.claude/CLAUDE.md`, loaded by the SDK via `setting_sources=["user", "project"]`.
 It defines the agent's identity, communication style, and workspace context. Framework
 internals (send_message usage, media handling, plugin info) are in the `system_prompt`
 parameter instead. Written only if it doesn't already exist, so user customizations
@@ -97,8 +98,7 @@ Each SDK client is configured with:
 | `system_prompt` | `{"type": "preset", "preset": "claude_code", "append": FRAMEWORK_SYSTEM_PROMPT}` |
 | `cwd` | `~/workspace` |
 | `permission_mode` | `bypassPermissions` (requires non-root user) |
-| `setting_sources` | `["project"]` |
-| `env` | `{"CLAUDE_CONFIG_DIR": "~/workspace/.claude"}` |
+| `setting_sources` | `["user", "project"]` |
 | `plugins` | `[{"type": "local", "path": "~/plugin"}]` if manifest exists |
 | `resume` | Persisted session UUID if available |
 | `mcp_servers` | `{"clawless": <in-process MCP server>}` with `send_message` tool |
@@ -206,12 +206,14 @@ result text is sent as a fallback.
 ## Docker Deployment
 
 **Dockerfile**: Python 3.13-slim, non-root `clawless` user, Node.js + Claude Code CLI.
-Default port: 18265.
+Dependencies installed via `uv sync --frozen` from committed `uv.lock` for reproducible
+builds. Default port: 18265.
 
 **docker-compose.yml**:
 
 ```yaml
 volumes:
+  - ${CLAWLESS_HOST_DIR}/.claude:/home/clawless/.claude:rw
   - ${CLAWLESS_HOST_DIR}/workspace:/home/clawless/workspace:rw
   - ${CLAWLESS_HOST_DIR}/data:/home/clawless/data:rw
   - ${CLAWLESS_HOST_DIR}/clawless.toml:/home/clawless/clawless.toml:ro
@@ -275,9 +277,10 @@ Run with: `uv run pytest -m docker -v -s`
    Keeps the mount simple.
 5. **API key in Settings** — `ANTHROPIC_API_KEY` is a required field in `Settings`,
    validated at startup by pydantic.
-6. **setting_sources=["project"] + CLAUDE_CONFIG_DIR** — SDK reads config only from
-   `~/workspace/.claude/`. `CLAUDE_CONFIG_DIR` redirects session storage there too,
-   eliminating `~/.claude/` entirely.
+6. **Two `.claude/` directories** — `~/.claude/` holds SDK runtime state (sessions,
+   memory); `~/workspace/.claude/` holds project-level config (CLAUDE.md, skills,
+   agents). Both are mounted as Docker volumes for persistence. Consolidating them
+   into one directory caused Claude Code to block writes to skills/agents.
 7. **Formatting via prompt injection** — Each channel's `formatting_instructions` are
    prepended to the user's message, letting Claude format natively rather than
    post-processing output.

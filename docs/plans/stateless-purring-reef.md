@@ -1,5 +1,10 @@
 # Experiment: Eliminate ~/.claude/ — consolidate into workspace/.claude
 
+**Status: REVERTED** — Consolidation was implemented but caused Claude Code to block
+writes to `~/workspace/.claude/skills/` and `agents/` because it treated the
+`CLAUDE_CONFIG_DIR` directory as protected. Reverted to the two-directory model:
+`~/.claude/` for SDK runtime state, `~/workspace/.claude/` for project-level config.
+
 ## Context
 
 Currently the home directory has two `.claude/` directories:
