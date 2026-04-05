@@ -25,7 +25,7 @@ through messaging channels (currently WhatsApp).
 
 ## Workspace
 
-This is your working directory. See ~/plugin/skills/ for available skills.
+Your working directory is ~/workspace/. See ~/plugin/skills/ for available skills.
 """
 
 CONFIG_TEMPLATE = """\

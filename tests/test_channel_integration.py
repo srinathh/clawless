@@ -6,6 +6,7 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
+from pathlib import Path
 
 import httpx
 import pytest
@@ -20,7 +21,7 @@ load_dotenv()
 
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
-async def client():
+async def test_env():
     run_dir = create_test_home()
     print(f"\n=== Test home: {run_dir} ===")
 
@@ -32,7 +33,7 @@ async def client():
         async with LifespanManager(app) as manager:
             transport = ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-                yield c
+                yield {"client": c, "run_dir": run_dir}
     finally:
         # Print directory tree after test run so we can see what the SDK created
         print(f"\n=== Directories created under {run_dir} ===")
@@ -46,16 +47,19 @@ async def client():
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_health(client):
-    r = await client.get("/health")
+async def test_health(test_env):
+    r = await test_env["client"].get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_scripted_messages_get_responses(client):
+async def test_scripted_messages_get_responses(test_env):
+    client = test_env["client"]
+    run_dir = test_env["run_dir"]
+
     # Wait for test channel to finish (poll /test/status)
-    for _ in range(120):  # up to 2 minutes
+    for _ in range(180):  # up to 3 minutes (4 messages now)
         r = await client.get("/test/status")
         status = r.json()
         if status["done"]:
@@ -67,7 +71,7 @@ async def test_scripted_messages_get_responses(client):
 
     r = await client.get("/test/responses")
     responses = r.json()["responses"]
-    assert len(responses) >= 3
+    assert len(responses) >= 4
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"]  # non-empty response from agent
@@ -79,4 +83,11 @@ async def test_scripted_messages_get_responses(client):
     assert "tool-test-ok" in all_text, (
         f"Expected 'tool-test-ok' in responses from send_message tool, "
         f"got: {[r['text'][:80] for r in responses]}"
+    )
+
+    # Verify agent created test.txt in workspace (fourth scripted message)
+    test_file = run_dir / "workspace" / "test.txt"
+    assert test_file.exists(), f"Agent did not create {test_file}"
+    assert test_file.read_text().strip() == "test", (
+        f"Expected 'test' in {test_file}, got: {test_file.read_text()!r}"
     )

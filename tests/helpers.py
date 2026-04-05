@@ -14,7 +14,7 @@ max_budget_usd = 0.50
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'"]
+messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done."]
 """
 
 
