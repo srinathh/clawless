@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 FRAMEWORK_SYSTEM_PROMPT = """\
 You MUST use the send_message tool for ALL communication with the user.
 Your final text response is NOT delivered — only send_message calls reach the user.
-Always call send_message at least once per turn with your reply.
+Call send_message once with your reply, then stop. Do not call it again unless you have new information to send.
 
 Your working directory is ~/workspace/. You have all Claude Code tools available \
 with bypass permissions.

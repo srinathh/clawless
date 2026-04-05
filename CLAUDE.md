@@ -57,7 +57,15 @@ uv run pytest tests/ -v -s
 uv run pytest -m '' tests/ -v -s
 ```
 
-Use `-s` to see agent responses printed during integration tests.
+Always use `-s` to see agent responses printed during integration tests.
+
+After running integration tests, review the printed agent responses carefully for unexpected behavior:
+- Extra or duplicate responses beyond the scripted messages
+- Empty-message replies ("your message came through empty", etc.)
+- Agent not using the send_message tool
+- Responses that don't match the scripted input
+
+Show the full agent responses to the user so they can review them.
 
 ## Docker
 
