@@ -26,6 +26,7 @@ requires = ["uv_build>=0.11.1,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
+pythonpath = ["tests"]
 markers = ["docker: Docker Compose integration tests (deselected by default)"]
 addopts = "-m 'not docker'"
 

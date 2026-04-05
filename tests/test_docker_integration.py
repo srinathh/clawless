@@ -10,27 +10,14 @@ Skipped by default — run with: uv run pytest -m docker -v -s
 import os
 import subprocess
 import time
-from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 import pytest
 
-from clawless.init import init_home
+from helpers import PROJECT_ROOT, create_test_home
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose.yml"
 TEST_PORT = 18266
-
-TOML_CONFIG = """
-[claude]
-max_turns = 5
-max_budget_usd = 0.50
-
-[channels.test]
-sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'"]
-"""
 
 
 def _resolve_credentials() -> dict[str, str]:
@@ -52,10 +39,7 @@ def _compose(*args: str, env: dict[str, str], quiet: bool = False) -> subprocess
 @pytest.fixture(scope="session")
 def docker_service():
     """Build, start, and tear down the clawless container."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
-    run_dir = (PROJECT_ROOT / "data" / f"docker_{ts}").resolve()
-    init_home(run_dir)
-    (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
+    run_dir = create_test_home(prefix="docker")
 
     cred_env = _resolve_credentials()
     compose_env = {
