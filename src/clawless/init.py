@@ -63,7 +63,7 @@ max_concurrent_requests = 3
 
 def init_home(path: Path) -> None:
     """Create the prescribed clawless directory structure."""
-    for subdir in ["workspace", "data"]:
+    for subdir in [".claude", "workspace", "data"]:
         (path / subdir).mkdir(parents=True, exist_ok=True)
 
     # Plugin skeleton with prescribed structure
@@ -111,12 +111,13 @@ def main() -> None:
     print(f"Initialized clawless home at {path}")
     print()
     print(f"  {path}/")
+    print(f"  ├── .claude/                # SDK runtime state (sessions, memory)")
     print(f"  ├── workspace/              # Agent working directory (Claude SDK cwd)")
-    print(f"  │   └── .claude/            # Standalone skills, agents, SDK config")
+    print(f"  │   └── .claude/            # Project-level skills, agents, config")
     print(f"  │       ├── CLAUDE.md       # Agent instructions")
     print(f"  │       ├── skills/         # Bot-created skills (writable)")
     print(f"  │       └── agents/         # Bot-created agents (writable)")
-    print(f"  ├── data/                   # Runtime state (sessions)")
+    print(f"  ├── data/                   # App runtime state (session map)")
     print(f"  ├── clawless.toml           # Edit this to configure channels")
     print(f"  └── plugin/                 # Pre-configured plugin (read-only in Docker)")
     print()

@@ -5,7 +5,8 @@ services:
       - "${PORT:-18265}:${PORT:-18265}"
     volumes:
       # Host dir created by: clawless-init /path/to/my/data
-      - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR}/workspace:/home/clawless/workspace:rw
+      - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR}/.claude:/home/clawless/.claude:rw
+      - ${CLAWLESS_HOST_DIR}/workspace:/home/clawless/workspace:rw
       - ${CLAWLESS_HOST_DIR}/data:/home/clawless/data:rw
       - ${CLAWLESS_HOST_DIR}/clawless.toml:/home/clawless/clawless.toml:ro
       - ${CLAWLESS_HOST_DIR}/plugin:/home/clawless/plugin:ro
