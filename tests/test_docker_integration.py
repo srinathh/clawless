@@ -13,8 +13,11 @@ import time
 
 import httpx
 import pytest
+from dotenv import load_dotenv
 
 from helpers import PROJECT_ROOT, create_test_home
+
+load_dotenv()
 
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose.yml"
 TEST_PORT = 18266

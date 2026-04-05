@@ -117,7 +117,7 @@ def test_no_channel_raises_validation_error():
     os.environ["ANTHROPIC_API_KEY"] = FAKE_API_KEY
     try:
         with pytest.raises(Exception, match="At least one channel must be configured"):
-            Settings()
+            Settings() # type: ignore
     finally:
         del os.environ["ANTHROPIC_API_KEY"]
         _teardown_home(old_home)

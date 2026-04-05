@@ -11,9 +11,12 @@ import httpx
 import pytest
 import pytest_asyncio
 from asgi_lifespan import LifespanManager
+from dotenv import load_dotenv
 from httpx import ASGITransport
 
 from helpers import create_test_home
+
+load_dotenv()
 
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
