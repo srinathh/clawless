@@ -10,9 +10,11 @@ services:
       - ${CLAWLESS_HOST_DIR}/data:/home/clawless/data:rw
       - ${CLAWLESS_HOST_DIR}/clawless.toml:/home/clawless/clawless.toml:ro
       - ${CLAWLESS_HOST_DIR}/plugin:/home/clawless/plugin:ro
+      - ${CLAWLESS_HOST_DIR}/logs:/home/clawless/logs:rw
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PORT: ${PORT:-18265}
+    command: ["/bin/bash", "-c", "clawless 2>&1 | tee /home/clawless/logs/clawless.log"]
     logging:
       driver: "json-file"
       options:
