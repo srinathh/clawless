@@ -6,6 +6,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 # Reproducible builds + faster startup
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Create non-root user (required for bypassPermissions)
 RUN useradd -m -s /bin/bash clawless
@@ -34,4 +36,4 @@ WORKDIR /home/clawless/workspace
 
 EXPOSE 18265
 
-CMD ["uv", "run", "--frozen", "clawless"]
+CMD ["clawless"]
