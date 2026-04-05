@@ -109,8 +109,16 @@ class AgentManager:
             plugins=plugins,
             mcp_servers={"clawless": self._mcp_server},
             allowed_tools=[
-                "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-                "WebSearch", "WebFetch", "Skill",
+                # File tools
+                "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "NotebookEdit",
+                # Execution
+                "Bash", "KillBash",
+                # Agent / orchestration
+                "Agent", "TodoWrite", "Skill",
+                # Web
+                "WebSearch", "WebFetch",
+                # MCP
+                "ListMcpResources", "ReadMcpResource",
                 "mcp__clawless__*",
             ],
         )
