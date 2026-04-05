@@ -164,15 +164,14 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 `clawless-init [path]` creates the prescribed directory structure.
 
 **Templates** (written only if file doesn't exist):
-- `USER_CLAUDE_MD_TEMPLATE` — agent identity and communication style (`~/.claude/CLAUDE.md`)
-- `PROJECT_CLAUDE_MD_TEMPLATE` — minimal stub for user customization (`~/workspace/.claude/CLAUDE.md`)
+- `PROJECT_CLAUDE_MD_TEMPLATE` — agent identity, communication style, and workspace context (`~/workspace/.claude/CLAUDE.md`)
 - `CONFIG_TEMPLATE` — skeleton config.toml with all channel options commented out
 
 **`init_home(path)`** creates:
-- `workspace/`, `.claude/`, `data/` directories
+- `workspace/`, `data/` directories
 - Plugin skeleton: `.claude-plugin/plugin.json`, `skills/`, `agents/`, `commands/`, `hooks/`
-- `workspace/.claude/` for project-level SDK settings
-- CLAUDE.md templates at user and project level
+- `workspace/.claude/` for project-level SDK settings and runtime state
+- CLAUDE.md template at project level
 - Config template in `data/`
 
 Used by both the CLI command and test fixtures (which call `init_home()` directly).

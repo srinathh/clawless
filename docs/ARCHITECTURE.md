@@ -23,10 +23,7 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │   │   ├── inbound/        # Downloaded from messaging platforms
 │   │   └── outbound/       # Staged for sending via messaging platforms
 │   └── .claude/
-│       └── CLAUDE.md       # Project-level instructions (workspace, media, plugin)
-├── .claude/                # User-level SDK settings
-│   ├── CLAUDE.md           # User-level instructions (identity, communication style)
-│   └── settings.json       # Loaded via setting_sources=["user"]
+│       └── CLAUDE.md       # Agent instructions (identity, workspace, media, plugin)
 ├── data/                   # Framework state. rw, NOT agent-accessible
 │   ├── config.toml         # App config (channels, claude options)
 │   └── sessions.db         # Session persistence via sqlitedict (auto-created)
@@ -43,17 +40,16 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 `Path.home()` and validates required dirs exist on construction. No configurable
 path fields — everything is conventional.
 
-**Bootstrap**: The SDK reads `~/.claude` automatically. Our framework state lives
-in `~/data/` (invisible to the agent since `cwd=~/workspace`). Config is loaded
-from `~/data/config.toml`.
+**Bootstrap**: Framework state lives in `~/data/` (invisible to the agent since
+`cwd=~/workspace`). Config is loaded from `~/data/config.toml`. SDK runtime state
+(sessions) is redirected to `~/workspace/.claude/` via `CLAUDE_CONFIG_DIR`.
 
-**CLAUDE.md files**: `clawless-init` scaffolds two CLAUDE.md files loaded by the SDK
-via `setting_sources=["user", "project"]`. User-level (`~/.claude/CLAUDE.md`) defines
-the agent's identity and communication style. Project-level (`~/workspace/.claude/CLAUDE.md`)
-is a minimal stub for user customization — framework internals (workspace paths, media
-handling, plugin info, send_message usage) are in the `system_prompt` parameter instead.
-Both are written only if they don't already exist, so user customizations survive re-runs
-of init.
+**CLAUDE.md**: `clawless-init` scaffolds a single CLAUDE.md at
+`~/workspace/.claude/CLAUDE.md`, loaded by the SDK via `setting_sources=["project"]`.
+It defines the agent's identity, communication style, and workspace context. Framework
+internals (send_message usage, media handling, plugin info) are in the `system_prompt`
+parameter instead. Written only if it doesn't already exist, so user customizations
+survive re-runs of init.
 
 ## Configuration
 
@@ -99,7 +95,8 @@ Each SDK client is configured with:
 | `system_prompt` | `{"type": "preset", "preset": "claude_code", "append": FRAMEWORK_SYSTEM_PROMPT}` |
 | `cwd` | `~/workspace` |
 | `permission_mode` | `bypassPermissions` (requires non-root user) |
-| `setting_sources` | `["user", "project"]` |
+| `setting_sources` | `["project"]` |
+| `env` | `{"CLAUDE_CONFIG_DIR": "~/workspace/.claude"}` |
 | `plugins` | `[{"type": "local", "path": "~/plugin"}]` if manifest exists |
 | `resume` | Persisted session UUID if available |
 | `mcp_servers` | `{"clawless": <in-process MCP server>}` with `send_message` tool |
@@ -113,8 +110,9 @@ Framework instructions are split into two layers:
   tool usage, workspace paths, media handling, plugin info. Uses `SystemPromptPreset`
   with `preset="claude_code"` to preserve built-in Claude Code tool instructions,
   appending framework-specific instructions via the `append` field.
-- **CLAUDE.md** (user-editable): Identity, personality, communication style (user-level),
-  and project-specific instructions (project-level). Loaded via `setting_sources`.
+- **CLAUDE.md** (user-editable): Identity, personality, communication style, and
+  workspace context. Single file at `~/workspace/.claude/CLAUDE.md`, loaded via
+  `setting_sources=["project"]`.
 
 ### Message Processing Flow
 
@@ -272,8 +270,9 @@ Run with: `uv run pytest -m docker -v -s`
    Keeps the mount simple.
 5. **API key in Settings** — `ANTHROPIC_API_KEY` is a required field in `Settings`,
    validated at startup by pydantic.
-6. **setting_sources=["user", "project"]** — SDK loads both `~/.claude/settings.json`
-   and `~/workspace/.claude/settings.json` + CLAUDE.md.
+6. **setting_sources=["project"] + CLAUDE_CONFIG_DIR** — SDK reads config only from
+   `~/workspace/.claude/`. `CLAUDE_CONFIG_DIR` redirects session storage there too,
+   eliminating `~/.claude/` entirely.
 7. **Formatting via prompt injection** — Each channel's `formatting_instructions` are
    prepended to the user's message, letting Claude format natively rather than
    post-processing output.

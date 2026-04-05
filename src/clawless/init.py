@@ -10,10 +10,11 @@ import argparse
 import json
 from pathlib import Path
 
-USER_CLAUDE_MD_TEMPLATE = """\
+PROJECT_CLAUDE_MD_TEMPLATE = """\
 # Clawless Personal Assistant
 
-You are a personal AI assistant running on the Clawless framework. Users reach you through messaging channels (currently WhatsApp).
+You are a personal AI assistant running on the Clawless framework. Users reach you \
+through messaging channels (currently WhatsApp).
 
 ## Communication style
 
@@ -21,10 +22,8 @@ You are a personal AI assistant running on the Clawless framework. Users reach y
 - Skip preamble. Answer directly
 - Channel-specific formatting rules are provided in each message — follow them
 - When a task is done, say so briefly. Don't recap what you did unless asked
-"""
 
-PROJECT_CLAUDE_MD_TEMPLATE = """\
-# Workspace
+## Workspace
 
 This is your working directory. See ~/plugin/skills/ for available skills.
 """
@@ -57,7 +56,7 @@ max_concurrent_requests = 3
 
 def init_home(path: Path) -> None:
     """Create the prescribed clawless directory structure."""
-    for subdir in ["workspace", ".claude", "data"]:
+    for subdir in ["workspace", "data"]:
         (path / subdir).mkdir(parents=True, exist_ok=True)
 
     # Plugin skeleton with prescribed structure
@@ -73,11 +72,7 @@ def init_home(path: Path) -> None:
     # Workspace .claude directory for project-level SDK settings
     (path / "workspace" / ".claude").mkdir(parents=True, exist_ok=True)
 
-    # CLAUDE.md templates — agent identity and workspace context
-    user_claude_md = path / ".claude" / "CLAUDE.md"
-    if not user_claude_md.exists():
-        user_claude_md.write_text(USER_CLAUDE_MD_TEMPLATE)
-
+    # CLAUDE.md — agent identity and workspace context (project-level only)
     project_claude_md = path / "workspace" / ".claude" / "CLAUDE.md"
     if not project_claude_md.exists():
         project_claude_md.write_text(PROJECT_CLAUDE_MD_TEMPLATE)
@@ -108,9 +103,7 @@ def main() -> None:
     print()
     print(f"  {path}/")
     print(f"  ├── workspace/              # Agent working directory (Claude SDK cwd)")
-    print(f"  │   └── .claude/CLAUDE.md   # Project-level agent instructions")
-    print(f"  ├── .claude/                # Claude CLI credentials and state")
-    print(f"  │   └── CLAUDE.md           # User-level agent instructions")
+    print(f"  │   └── .claude/CLAUDE.md   # Agent instructions and SDK config")
     print(f"  ├── data/                   # Framework config and state")
     print(f"  │   └── config.toml         # Edit this to configure channels")
     print(f"  └── plugin/                 # Plugin directory (skills, agents, hooks)")

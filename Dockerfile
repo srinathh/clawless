@@ -4,8 +4,7 @@ FROM python:3.13-slim
 RUN useradd -m -s /bin/bash clawless
 
 # Create prescribed directory structure under home
-RUN mkdir -p /home/clawless/workspace /home/clawless/.claude \
-             /home/clawless/data /home/clawless/plugin && \
+RUN mkdir -p /home/clawless/workspace /home/clawless/data /home/clawless/plugin && \
     chown -R clawless:clawless /home/clawless
 
 # Install Node.js (required by Claude Code CLI)
