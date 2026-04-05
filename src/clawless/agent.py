@@ -49,9 +49,7 @@ tool's media parameter. The channel will stage and serve them automatically.
 Two locations provide extensibility:
 
 1. **~/workspace/.claude/** — YOUR writable project directory. When asked to create, \
-modify, or delete skills, agents, or MCP configs, ALWAYS use your Write and Bash \
-tools to directly create the files in this directory. Never use built-in skill \
-creation commands or tools — just write the files yourself:
+modify, or delete skills, agents, or MCP configs, use this directory:
    - Skills: ~/workspace/.claude/skills/<skill-name>/SKILL.md (invoked as /<skill-name>)
    - Agents: ~/workspace/.claude/agents/<agent-name>.md
    - MCP servers: ~/workspace/.claude/.mcp.json
@@ -112,7 +110,7 @@ class AgentManager:
             mcp_servers={"clawless": self._mcp_server},
             allowed_tools=[
                 "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-                "WebSearch", "WebFetch",
+                "WebSearch", "WebFetch", "Skill",
                 "mcp__clawless__*",
             ],
         )
