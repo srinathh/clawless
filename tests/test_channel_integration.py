@@ -6,7 +6,6 @@ Exercises the full pipeline: config → app → agent → channel.send().
 
 import asyncio
 import os
-from pathlib import Path
 
 import httpx
 import pytest
@@ -15,7 +14,7 @@ from asgi_lifespan import LifespanManager
 from dotenv import load_dotenv
 from httpx import ASGITransport
 
-from helpers import create_test_home
+from helpers import assert_agent_responses, create_test_home
 
 load_dotenv()
 
@@ -59,7 +58,7 @@ async def test_scripted_messages_get_responses(test_env):
     run_dir = test_env["run_dir"]
 
     # Wait for test channel to finish (poll /test/status)
-    for _ in range(180):  # up to 3 minutes (4 messages now)
+    for _ in range(180):  # up to 3 minutes
         r = await client.get("/test/status")
         status = r.json()
         if status["done"]:
@@ -71,23 +70,4 @@ async def test_scripted_messages_get_responses(test_env):
 
     r = await client.get("/test/responses")
     responses = r.json()["responses"]
-    assert len(responses) >= 4
-    for i, resp in enumerate(responses):
-        print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
-        assert resp["text"]  # non-empty response from agent
-        assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
-        assert resp["to"] == "test:user1"
-
-    # Verify send_message tool was used (marker text from third scripted message)
-    all_text = " ".join(r["text"] for r in responses)
-    assert "tool-test-ok" in all_text, (
-        f"Expected 'tool-test-ok' in responses from send_message tool, "
-        f"got: {[r['text'][:80] for r in responses]}"
-    )
-
-    # Verify agent created test.txt in workspace (fourth scripted message)
-    test_file = run_dir / "workspace" / "test.txt"
-    assert test_file.exists(), f"Agent did not create {test_file}"
-    assert test_file.read_text().strip() == "test", (
-        f"Expected 'test' in {test_file}, got: {test_file.read_text()!r}"
-    )
+    assert_agent_responses(responses, run_dir)

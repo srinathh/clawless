@@ -15,7 +15,7 @@ import httpx
 import pytest
 from dotenv import load_dotenv
 
-from helpers import PROJECT_ROOT, create_test_home
+from helpers import PROJECT_ROOT, assert_agent_responses, create_test_home
 
 load_dotenv()
 
@@ -43,6 +43,7 @@ def _compose(*args: str, env: dict[str, str], quiet: bool = False) -> subprocess
 def docker_service():
     """Build, start, and tear down the clawless container."""
     run_dir = create_test_home(prefix="docker")
+    print(f"\n=== Test home: {run_dir} ===")
 
     cred_env = _resolve_credentials()
     compose_env = {
@@ -78,7 +79,13 @@ def docker_service():
         _compose("down", "-v", env=compose_env)
         pytest.fail(f"Container never became healthy.\nLogs:\n{logs.stdout}\n{logs.stderr}")
 
-    yield base_url
+    yield {"base_url": base_url, "run_dir": run_dir}
+
+    # Print directory tree before teardown
+    print(f"\n=== Directories created under {run_dir} ===")
+    for dirpath in sorted(run_dir.rglob("*")):
+        if dirpath.is_dir():
+            print(f"  {dirpath.relative_to(run_dir)}/")
 
     # Teardown
     _compose("down", "-v", env=compose_env)
@@ -86,14 +93,15 @@ def docker_service():
 
 @pytest.mark.docker
 def test_health(docker_service):
-    r = httpx.get(f"{docker_service}/health")
+    r = httpx.get(f"{docker_service['base_url']}/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
 @pytest.mark.docker
 def test_scripted_messages_get_responses(docker_service):
-    base_url = docker_service
+    base_url = docker_service["base_url"]
+    run_dir = docker_service["run_dir"]
 
     # Poll /test/status until done (up to 5 minutes)
     status = None
@@ -114,16 +122,4 @@ def test_scripted_messages_get_responses(docker_service):
 
     r = httpx.get(f"{base_url}/test/responses", timeout=5)
     responses = r.json()["responses"]
-    assert len(responses) >= 3
-    for i, resp in enumerate(responses):
-        print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
-        assert resp["text"]  # non-empty response from agent
-        assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
-        assert resp["to"] == "test:user1"
-
-    # Verify send_message tool was used (marker text from third scripted message)
-    all_text = " ".join(r["text"] for r in responses)
-    assert "tool-test-ok" in all_text, (
-        f"Expected 'tool-test-ok' in responses from send_message tool, "
-        f"got: {[r['text'][:80] for r in responses]}"
-    )
+    assert_agent_responses(responses, run_dir)
