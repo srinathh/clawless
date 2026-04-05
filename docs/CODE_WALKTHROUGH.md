@@ -12,22 +12,23 @@ All paths and settings originate here.
 - `data_dir` — `~/data` (config.toml, sessions.db)
 - `plugin_dir` — `~/plugin` (Claude Code plugin)
 - `media_dir` — `~/workspace/media` (runtime artifact, auto-created)
-- `config_file` — `~/data/config.toml`
 
 Constructor calls `_validate()` which checks that `workspace`, `data_dir`, and
-`plugin_dir` exist as directories and `config_file` exists. Raises `RuntimeError`
-with a helpful "run clawless-init" message if anything is missing.
+`plugin_dir` exist as directories. Raises `RuntimeError` with a helpful
+"run clawless-init" message if anything is missing.
 
-**Settings** (pydantic-settings `BaseSettings`) loads config from two sources in
+**Settings** (pydantic-settings `BaseSettings`) loads config from three sources in
 priority order:
 1. Environment variables (with `__` as nesting delimiter, e.g. `CLAUDE__MAX_TURNS=10`)
-2. TOML file at `~/data/config.toml`
+2. `.env` file in CWD (gracefully ignored if missing)
+3. TOML file at `~/data/config.toml` (gracefully ignored if missing)
 
-This is configured in `settings_customise_sources()` which returns `(env_settings, toml_source)`.
+This is configured in `settings_customise_sources()` which returns
+`(env_settings, dotenv_settings, toml_source)`.
 
-**Channel configs** are optional — each is `None` until its TOML section exists.
-`ChannelsConfig.has_any()` checks if at least one channel is configured; the app
-refuses to start without one.
+`anthropic_api_key` is a required field — pydantic raises `ValidationError` if
+missing from all sources. A `model_validator` also enforces that at least one
+channel is configured.
 
 ## `src/clawless/app.py` — Application Wiring
 
@@ -38,7 +39,7 @@ The FastAPI lifespan function is the central wiring point:
 3. Detects plugin at `~/plugin/.claude-plugin/`
 4. Creates `AgentManager` with claude config, plugin paths, workspace, and data_dir
 5. Conditionally creates `TwilioWhatsAppChannel` and/or `TestChannel` based on config
-6. Fails fast if no channels configured
+6. Channel validation is handled by `Settings` model_validator at construction time
 
 The test channel is special — it starts immediately via `asyncio.create_task(test.run())`
 since it feeds scripted messages rather than waiting for webhooks.
@@ -197,13 +198,13 @@ splits, space splits, hard cuts, multiple chunks.
 ### `tests/test_channel_integration.py` — Host Integration Test
 
 Full pipeline test running in-process. Session-scoped async fixture creates isolated
-home, symlinks real credentials, starts app via ASGI transport. Polls test channel
-endpoints, asserts on agent responses, checks for auth failures.
+home, starts app via ASGI transport. Requires `ANTHROPIC_API_KEY` env var. Polls test
+channel endpoints, asserts on agent responses, checks for auth failures.
 
 ### `tests/test_docker_integration.py` — Docker Integration Test
 
 Marked `@pytest.mark.docker`, skipped by default. Session-scoped fixture builds
-Docker image, starts container via `docker compose up`, resolves credentials
-(ANTHROPIC_API_KEY > ~/.claude/.credentials.json > skip), polls health and test
+Docker image, starts container via `docker compose up`, requires `ANTHROPIC_API_KEY`
+(skips if not set), polls health and test
 channel endpoints over real HTTP. Streams docker compose output to terminal.
 Port 18266 (vs 18265 prod default).

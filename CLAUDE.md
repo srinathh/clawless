@@ -29,15 +29,15 @@ src/clawless/
 ## Key conventions
 
 - All paths derive from `Path.home()` via `ClawlessPaths` — no configurable path fields
-- Config lives at `~/data/config.toml`, loaded by pydantic-settings with `__` env var overrides
-- API key is NOT in our config — the SDK reads `ANTHROPIC_API_KEY` or `~/.claude/.credentials.json`
+- Config sources (highest priority wins): env vars > `.env` file > `~/data/config.toml` (all optional)
+- `ANTHROPIC_API_KEY` is required — validated by pydantic-settings at startup
 - Sender IDs are channel-namespaced (e.g. `whatsapp:+1234567890`, `test:user1`)
 - The `~/plugin/` directory is a single Claude Code plugin, not a container of multiple plugins
 
 ## Running tests
 
 Tests create isolated home dirs under `./data/<timestamp>/` and set `HOME` to point there.
-Requires `ANTHROPIC_API_KEY` env var or `~/.claude/.credentials.json` for integration tests.
+Requires `ANTHROPIC_API_KEY` env var for integration tests.
 
 ```
 # Unit tests (fast, no API key needed)
@@ -61,15 +61,10 @@ Use `-s` to see agent responses printed during integration tests.
 
 ## Docker
 
-Two auth modes — set one or the other:
-
 ```
 clawless-init ~/my-data          # scaffold home structure on host
 # edit ~/my-data/data/config.toml
+# set ANTHROPIC_API_KEY in .env or environment
 
-# Option 1: API key
-CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
-
-# Option 2: Claude credentials file (subscription auth)
-CLAWLESS_HOST_DIR=~/my-data CLAUDE_CREDENTIALS_FILE=~/.claude/.credentials.json docker compose up
+CLAWLESS_HOST_DIR=~/my-data docker compose up
 ```

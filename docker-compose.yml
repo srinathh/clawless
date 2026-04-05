@@ -6,12 +6,7 @@ services:
     volumes:
       # Host dir created by: clawless-init /path/to/my/data
       - ${CLAWLESS_HOST_DIR:?Set CLAWLESS_HOST_DIR to the host path created by clawless-init}:/home/clawless:rw
-
-      # Claude credentials file — set CLAUDE_CREDENTIALS_FILE to mount host credentials
-      # for subscription auth. Defaults to /dev/null (harmless no-op) when unset.
-      - ${CLAUDE_CREDENTIALS_FILE:-/dev/null}:/home/clawless/.claude/.credentials.json:ro
     environment:
-      # Either set ANTHROPIC_API_KEY or mount credentials via CLAUDE_CREDENTIALS_FILE
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PORT: ${PORT:-18265}
     restart: unless-stopped

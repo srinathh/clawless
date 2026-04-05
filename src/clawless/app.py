@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     paths = ClawlessPaths()
     settings = Settings()  # type: ignore[call-arg]
+
+    # Ensure SDK can read the API key from environment
+    os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
     logger.info("Starting clawless — home: %s", paths.home)
 
@@ -47,9 +51,6 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(app.state.test.run())
         logger.info("Test channel active — %d scripted messages",
                      len(settings.channels.test.messages))
-
-    if not settings.channels.has_any():
-        raise RuntimeError("No channels configured — add at least one channel to config.toml")
 
     logger.info("Clawless ready")
     yield

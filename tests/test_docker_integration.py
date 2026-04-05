@@ -3,7 +3,7 @@
 Builds and runs the clawless container via docker compose, feeds scripted
 messages through the test channel, and verifies responses over real HTTP.
 
-Requires Docker and either ANTHROPIC_API_KEY or ~/.claude/.credentials.json.
+Requires Docker and ANTHROPIC_API_KEY.
 Skipped by default — run with: uv run pytest -m docker -v -s
 """
 
@@ -35,19 +35,10 @@ messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to
 
 def _resolve_credentials() -> dict[str, str]:
     """Return env vars for Docker Compose auth, or skip the test."""
-    env: dict[str, str] = {}
-
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if api_key:
-        env["ANTHROPIC_API_KEY"] = api_key
-        return env
-
-    creds_path = Path.home() / ".claude" / ".credentials.json"
-    if creds_path.is_file():
-        env["CLAUDE_CREDENTIALS_FILE"] = str(creds_path)
-        return env
-
-    pytest.skip("No ANTHROPIC_API_KEY or ~/.claude/.credentials.json found")
+    if not api_key:
+        pytest.skip("ANTHROPIC_API_KEY not set")
+    return {"ANTHROPIC_API_KEY": api_key}
 
 
 def _compose(*args: str, env: dict[str, str], quiet: bool = False) -> subprocess.CompletedProcess:

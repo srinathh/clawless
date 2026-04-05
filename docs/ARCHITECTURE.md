@@ -24,10 +24,9 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │   │   └── outbound/       # Staged for sending via messaging platforms
 │   └── .claude/
 │       └── CLAUDE.md       # Project-level instructions (workspace, media, plugin)
-├── .claude/                # User-level SDK settings + credentials
+├── .claude/                # User-level SDK settings
 │   ├── CLAUDE.md           # User-level instructions (identity, communication style)
-│   ├── settings.json       # Loaded via setting_sources=["user"]
-│   └── .credentials.json   # API credentials (mountable from Docker host)
+│   └── settings.json       # Loaded via setting_sources=["user"]
 ├── data/                   # Framework state. rw, NOT agent-accessible
 │   ├── config.toml         # App config (channels, claude options)
 │   └── sessions.db         # Session persistence via sqlitedict (auto-created)
@@ -58,24 +57,27 @@ of init.
 
 ## Configuration
 
-`Settings` (pydantic-settings) loads from `~/data/config.toml` with env var
-overrides using `__` as nesting delimiter (e.g. `CLAUDE__MAX_TURNS=10`).
+`Settings` (pydantic-settings) loads config from three sources (highest priority wins):
+1. Environment variables (with `__` as nesting delimiter, e.g. `CLAUDE__MAX_TURNS=10`)
+2. `.env` file in CWD (gracefully ignored if missing)
+3. `~/data/config.toml` (gracefully ignored if missing)
 
 ```
 Settings
+├── anthropic_api_key: str          # required
 ├── port: int = 18265
 ├── claude: ClaudeConfig
 │   ├── max_turns: int = 30
 │   ├── max_budget_usd: float = 1.0
 │   ├── max_concurrent_requests: int = 3
 │   └── request_timeout: float = 300.0
-└── channels: ChannelsConfig
+└── channels: ChannelsConfig        # at least one required (model_validator)
     ├── twilio_whatsapp: TwilioWhatsAppConfig | None
     └── test: TestChannelConfig | None
 ```
 
-API key is NOT in config — the SDK reads `ANTHROPIC_API_KEY` env var or
-`~/.claude/.credentials.json` directly.
+`anthropic_api_key` is required — pydantic raises `ValidationError` if missing.
+A `model_validator` also enforces that at least one channel is configured.
 
 ## Agent Session Management
 
@@ -211,23 +213,19 @@ Default port: 18265.
 ```yaml
 volumes:
   - ${CLAWLESS_HOST_DIR}:/home/clawless:rw
-  - ${CLAUDE_CREDENTIALS_FILE:-/dev/null}:/home/clawless/.claude/.credentials.json:ro
 environment:
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   PORT: ${PORT:-18265}
 ```
 
-Two auth modes:
-- **API key**: set `ANTHROPIC_API_KEY`, leave `CLAUDE_CREDENTIALS_FILE` unset
-- **Credentials file**: set `CLAUDE_CREDENTIALS_FILE=~/.claude/.credentials.json`, leave `ANTHROPIC_API_KEY` unset
-
-The credentials file mount overrides the specific file within the broader `/home/clawless` bind mount.
+`ANTHROPIC_API_KEY` is required. Set it in `.env` or pass via environment.
 
 **Setup**:
 ```
 clawless-init ~/my-data
 # edit ~/my-data/data/config.toml
-CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
+# set ANTHROPIC_API_KEY in .env or environment
+CLAWLESS_HOST_DIR=~/my-data docker compose up
 ```
 
 ## Testing
@@ -244,7 +242,6 @@ sets `HOME` to point there, and restores it after.
 
 Runs the full pipeline in-process against the real Claude Agent SDK:
 - Creates isolated home dir with test channel config
-- Symlinks `~/.claude/.credentials.json` from the real home for authentication
 - Starts app via `LifespanManager` + `httpx.AsyncClient(ASGITransport)`
 - Session-scoped fixture with `loop_scope="session"` for shared event loop
 - Polls `/test/status` until done, then asserts on `/test/responses`
@@ -255,7 +252,7 @@ Runs the full pipeline in-process against the real Claude Agent SDK:
 
 Builds and runs the full Docker container, skipped by default (`@pytest.mark.docker`):
 - Creates isolated home dir, scaffolds config with test channel
-- Resolves credentials: `ANTHROPIC_API_KEY` env var > `~/.claude/.credentials.json` > skip
+- Requires `ANTHROPIC_API_KEY` env var (skips if not set)
 - Runs `docker compose up -d --build` with `PORT=18266`
 - Waits for `/health` (up to 5 min, progress printed every 10s)
 - Streams docker compose stdout/stderr to terminal
@@ -273,8 +270,8 @@ Run with: `uv run pytest -m docker -v -s`
 3. **Fire-and-forget webhooks** — Return acknowledgment immediately, process async.
 4. **Single plugin dir** — `~/plugin/` is one plugin, not a parent of many.
    Keeps the mount simple.
-5. **SDK reads credentials** — `ANTHROPIC_API_KEY` and `~/.claude/.credentials.json`
-   are handled by the SDK, not our config.
+5. **API key in Settings** — `ANTHROPIC_API_KEY` is a required field in `Settings`,
+   validated at startup by pydantic.
 6. **setting_sources=["user", "project"]** — SDK loads both `~/.claude/settings.json`
    and `~/workspace/.claude/settings.json` + CLAUDE.md.
 7. **Formatting via prompt injection** — Each channel's `formatting_instructions` are

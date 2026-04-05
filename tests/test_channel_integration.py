@@ -1,6 +1,6 @@
 """Integration tests for the test channel.
 
-Requires a real Claude API key (via .credentials.json or ANTHROPIC_API_KEY).
+Requires ANTHROPIC_API_KEY.
 Exercises the full pipeline: config → app → agent → channel.send().
 """
 
@@ -38,11 +38,6 @@ async def client():
     run_dir = (PROJECT_ROOT / "data" / ts).resolve()
     init_home(run_dir)
     (run_dir / "data" / "config.toml").write_text(TOML_CONFIG)
-
-    # Symlink credentials from real home so the SDK can authenticate
-    real_creds = Path.home() / ".claude" / ".credentials.json"
-    if real_creds.is_file():
-        (run_dir / ".claude" / ".credentials.json").symlink_to(real_creds)
 
     old_home = os.environ.get("HOME")
     os.environ["HOME"] = str(run_dir)

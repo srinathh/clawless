@@ -1,15 +1,15 @@
-"""Configuration loaded from TOML file with env var overrides.
+"""Configuration from env vars, .env file, and optional TOML.
 
 All paths are derived from Path.home() — see ClawlessPaths.
-Config is loaded from ~/data/config.toml. Environment variables can override
-any TOML value using __ as the nesting separator (e.g. CLAUDE__MAX_TURNS=10).
+Config sources (highest priority wins): env vars > .env file > ~/data/config.toml.
+Environment variables use __ as the nesting separator (e.g. CLAUDE__MAX_TURNS=10).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -42,11 +42,6 @@ class ClawlessPaths:
                 f"Missing directories under {self._home}: {', '.join(missing)}. "
                 f"Run 'clawless-init {self._home}' to create the expected structure."
             )
-        if not self.config_file.exists():
-            raise RuntimeError(
-                f"Config file not found: {self.config_file}. "
-                f"Run 'clawless-init {self._home}' to create it."
-            )
 
     @property
     def home(self) -> Path:
@@ -63,10 +58,6 @@ class ClawlessPaths:
     @property
     def plugin_dir(self) -> Path:
         return self._home / "plugin"
-
-    @property
-    def config_file(self) -> Path:
-        return self.data_dir / "config.toml"
 
     @property
     def media_dir(self) -> Path:
@@ -104,11 +95,18 @@ class ChannelsConfig(BaseModel):
 
 
 class Settings(BaseSettings):
+    anthropic_api_key: str
     port: int = 18265
     claude: ClaudeConfig = ClaudeConfig()
     channels: ChannelsConfig = ChannelsConfig()
 
-    model_config = {"env_nested_delimiter": "__"}
+    model_config = {"env_nested_delimiter": "__", "env_file": ".env"}
+
+    @model_validator(mode="after")
+    def at_least_one_channel(self):
+        if not self.channels.has_any():
+            raise ValueError("At least one channel must be configured")
+        return self
 
     @classmethod
     def settings_customise_sources(
@@ -122,5 +120,6 @@ class Settings(BaseSettings):
         toml_file = str(Path.home() / "data" / "config.toml")
         return (
             env_settings,
+            dotenv_settings,
             TomlConfigSettingsSource(settings_cls, toml_file=toml_file),
         )
