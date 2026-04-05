@@ -19,9 +19,9 @@ Clawless gives you a personal Claude-powered assistant reachable via WhatsApp (a
 *   **Session persistence** — conversations resume across restarts via SQLite-backed session storage
 *   **Concurrency controls** — per-sender message serialization and a global semaphore to cap parallel SDK calls
 *   **Plugin system** — extend the agent with custom skills, commands, and hooks using Claude Code's plugin format
-*   **Customizable personality** — edit CLAUDE.md files to shape the agent's identity and communication style
+*   **Customizable personality** — edit CLAUDE.md to shape the agent's identity and communication style
 *   **Media support** — send and receive images, documents, and other files through messaging channels
-*   **Docker-first deployment** — single container with two auth modes (API key or Claude credentials file)
+*   **Docker-first deployment** — single container, API key auth, single bind mount
 
 ## How it works
 
@@ -42,7 +42,7 @@ Messaging Platform ──webhook──> Channel ──fire-and-forget──> Age
 ### Prerequisites
 
 *   Docker and Docker Compose
-*   An [Anthropic API key](https://console.anthropic.com/) or Claude subscription credentials
+*   An [Anthropic API key](https://console.anthropic.com/)
 *   For WhatsApp: a [Twilio](https://www.twilio.com/) account with WhatsApp sandbox or number
 
 ### Install and scaffold
@@ -58,9 +58,7 @@ This creates the following structure:
 ```
 ~/my-data/
 ├── workspace/              # Agent's working directory
-│   └── .claude/CLAUDE.md   # Project-level instructions (editable)
-├── .claude/
-│   └── CLAUDE.md           # Agent identity & communication style (editable)
+│   └── .claude/CLAUDE.md   # Agent instructions and SDK config (editable)
 ├── data/
 │   └── config.toml         # Channel and agent configuration
 └── plugin/                 # Custom skills, hooks, commands
@@ -93,11 +91,7 @@ allowed_senders = ["whatsapp:+1234567890"]
 ### Run with Docker
 
 ```
-# Option 1: API key
 CLAWLESS_HOST_DIR=~/my-data ANTHROPIC_API_KEY=sk-... docker compose up
-
-# Option 2: Claude credentials file (subscription auth)
-CLAWLESS_HOST_DIR=~/my-data CLAUDE_CREDENTIALS_FILE=~/.claude/.credentials.json docker compose up
 ```
 
 ## Configuration
@@ -112,7 +106,7 @@ Configuration is loaded from `~/data/config.toml` with environment variable over
 | `claude.max_concurrent_requests` | `3` | Max parallel SDK calls |
 | `claude.request_timeout` | `300.0` | Timeout per request (seconds) |
 
-The Anthropic API key is **not** part of the config — the SDK reads it from the `ANTHROPIC_API_KEY` environment variable or `~/.claude/.credentials.json`.
+The Anthropic API key is **not** part of the config — pass it via the `ANTHROPIC_API_KEY` environment variable.
 
 ## Channels
 
@@ -147,9 +141,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full channel contract.
 
 ### Agent personality
 
-Edit `~/.claude/CLAUDE.md` (user-level) to change the agent's identity and communication style. Edit `~/workspace/.claude/CLAUDE.md` (project-level) for workspace-specific instructions.
+Edit `~/workspace/.claude/CLAUDE.md` to change the agent's identity, communication style, and workspace-specific instructions.
 
-Both files are created by `clawless-init` with sensible defaults and are never overwritten on re-runs.
+This file is created by `clawless-init` with sensible defaults and is never overwritten on re-runs.
 
 ### Plugins
 
@@ -192,7 +186,7 @@ uv run pytest tests/ -v -s
 uv run pytest -m '' tests/ -v -s
 ```
 
-Use `-s` to see agent responses printed during integration tests. Integration tests require `ANTHROPIC_API_KEY` or `~/.claude/.credentials.json`.
+Use `-s` to see agent responses printed during integration tests. Integration tests require `ANTHROPIC_API_KEY`.
 
 ## Status and roadmap
 

@@ -1,5 +1,10 @@
 # Spec: Move Framework Internals from CLAUDE.md to system_prompt
 
+> **Status**: Implemented. Note: this spec references the old two-CLAUDE.md layout
+> (`~/.claude/CLAUDE.md` + `~/workspace/.claude/CLAUDE.md`). These have since been
+> consolidated into a single `~/workspace/.claude/CLAUDE.md` with
+> `setting_sources=["project"]`.
+
 ## Problem
 
 Currently, framework-internal instructions are scattered across CLAUDE.md templates
@@ -38,11 +43,11 @@ Split instructions into two clear layers:
 
 ### Interaction with CLAUDE.md
 
-`setting_sources=["user", "project"]` loads CLAUDE.md files independently of
+`setting_sources=["project"]` loads CLAUDE.md independently of
 `system_prompt`. Both work together:
 
 1. `system_prompt` provides Claude's core behavioral instructions
-2. `setting_sources` loads CLAUDE.md as additional project/user context
+2. `setting_sources` loads CLAUDE.md as additional project context
 
 ## Current State
 

@@ -2,13 +2,19 @@
 
 _You don't need a claw._
 
-> **Status as of 2026-04-04**: Phase 1 (MVP) is complete. The core loop, WhatsApp
+> **Status as of 2026-04-05**: Phase 1 (MVP) is complete. The core loop, WhatsApp
 > channel, test channel, session persistence, Docker deployment, and three tiers of
 > tests are all implemented and working. See `docs/ARCHITECTURE.md` for the current
 > architecture. This document is the original design spec and retains research
 > questions and ideas that informed the implementation — some are now answered,
 > some are deferred to later phases. Annotations like **[IMPLEMENTED]**, **[ANSWERED]**,
 > and **[DEFERRED]** mark the status of each section.
+>
+> **Note**: This spec references a two-directory layout (`~/.claude/` + `~/workspace/.claude/`)
+> and `setting_sources=["user", "project"]`. These have been consolidated —
+> `~/.claude/` no longer exists. All config and SDK runtime state now lives under
+> `~/workspace/.claude/` via `setting_sources=["project"]` + `CLAUDE_CONFIG_DIR`.
+> See `docs/ARCHITECTURE.md` for the current layout.
 
 ## Overview
 
