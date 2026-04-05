@@ -104,7 +104,7 @@ class AgentManager:
             max_turns=self._config.max_turns,
             max_budget_usd=self._config.max_budget_usd,
             setting_sources=["project"],
-            env={"CLAUDE_CONFIG_DIR": str(self._workspace / ".claude")},
+            env={},
             cwd=str(self._workspace),
             plugins=plugins,
             mcp_servers={"clawless": self._mcp_server},
