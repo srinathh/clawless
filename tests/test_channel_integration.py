@@ -22,6 +22,7 @@ load_dotenv()
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def client():
     run_dir = create_test_home()
+    print(f"\n=== Test home: {run_dir} ===")
 
     old_home = os.environ.get("HOME")
     os.environ["HOME"] = str(run_dir)
@@ -33,6 +34,11 @@ async def client():
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
                 yield c
     finally:
+        # Print directory tree after test run so we can see what the SDK created
+        print(f"\n=== Directories created under {run_dir} ===")
+        for dirpath in sorted(run_dir.rglob("*")):
+            if dirpath.is_dir():
+                print(f"  {dirpath.relative_to(run_dir)}/")
         if old_home:
             os.environ["HOME"] = old_home
         else:
