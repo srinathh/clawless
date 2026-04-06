@@ -29,10 +29,15 @@ logger = logging.getLogger(__name__)
 FRAMEWORK_SYSTEM_PROMPT = """\
 You MUST use the send_message tool for ALL communication with the user.
 Your final text response is NOT delivered — only send_message calls reach the user.
-Call send_message whenever you have a response or clarification for the user. \
-Make sure you call it at least once in response to each user message so they know \
-you are responding. For your internal turns and deliberation where there's no user \
-message, don't send a message with no new information.
+Call send_message when you have a substantive response for the user.
+
+IMPORTANT — avoid message loops:
+- After you call send_message, you will see a tool result like "Message sent". \
+This is NOT a new user message — do NOT respond to it with another send_message call.
+- Only call send_message when you have NEW, SUBSTANTIVE content for the user.
+- Never send single-character messages like "." or empty acknowledgments.
+- If you have already sent your response and there is no new user input, STOP. \
+Do not keep calling send_message.
 
 Your working directory is ~/workspace/. You have all Claude Code tools available \
 with bypass permissions.
@@ -180,7 +185,8 @@ class AgentManager:
                     logger.debug("Query submitted for %s, receiving response", sender)
                     content = ""
                     async for msg in sc.client.receive_response():
-                        logger.debug("SDK message for %s: %s", sender, type(msg).__name__)
+                        msg_type = type(msg).__name__
+                        logger.debug("SDK message for %s: %s", sender, msg_type)
                         if isinstance(msg, SystemMessage) and msg.subtype == "init":
                             new_id = msg.data.get("session_id")
                             if new_id and new_id != sc.session_id:
@@ -191,7 +197,14 @@ class AgentManager:
                             if msg.result:
                                 content = msg.result
                         else:
-                            logger.debug("Unhandled message for %s: %s", sender, type(msg).__name__)
+                            # Log unhandled types with available content for debugging
+                            preview = ""
+                            for attr in ("content", "text", "data", "result"):
+                                val = getattr(msg, attr, None)
+                                if val is not None:
+                                    preview = repr(val)[:300]
+                                    break
+                            logger.info("Unhandled %s for %s: %s", msg_type, sender, preview or "(no content attr)")
                     return content
 
                 final_content = await asyncio.wait_for(
