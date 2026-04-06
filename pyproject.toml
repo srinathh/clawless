@@ -3,6 +3,7 @@ name = "clawless"
 version = "0.1.0"
 description = "Minimal self-hosted personal AI assistant via Claude Agent SDK"
 readme = "README.md"
+license = { text = "Apache-2.0" }
 authors = [
     { name = "Hariharan Srinath", email = "srinathh@gmail.com" }
 ]
