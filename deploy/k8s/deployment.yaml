@@ -24,14 +24,14 @@ spec:
         fsGroup: 1000
       initContainers:
         - name: init-home
-          image: ghcr.io/srinathh/clawless:latest
+          image: ghcr.io/srinathh/clawless
           command: ["clawless-init", "/mnt/clawless-home"]
           volumeMounts:
             - name: clawless-home
               mountPath: /mnt/clawless-home
       containers:
         - name: clawless
-          image: ghcr.io/srinathh/clawless:latest
+          image: ghcr.io/srinathh/clawless
           imagePullPolicy: Always
           ports:
             - containerPort: 18265
