@@ -3,8 +3,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: clawless-home
 spec:
-  # Override via patch in kustomization.yaml if not using microk8s-hostpath
-  storageClassName: microk8s-hostpath
+  # Uses the cluster's default StorageClass when storageClassName is omitted.
+  # Override via patch in kustomization.yaml for a specific class.
   accessModes:
     - ReadWriteOnce
   resources:
