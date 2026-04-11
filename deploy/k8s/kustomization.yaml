@@ -13,6 +13,26 @@ resources:
   - deployment.yaml
   - service.yaml
 
+# Uncomment to override the default port (18265):
+# patches:
+#   - target:
+#       kind: Deployment
+#       name: clawless
+#     patch: |
+#       - op: replace
+#         path: /spec/template/spec/containers/0/ports/0/containerPort
+#         value: 9090
+#       - op: replace
+#         path: /spec/template/spec/containers/0/env/0/value
+#         value: "9090"
+#   - target:
+#       kind: Service
+#       name: clawless
+#     patch: |
+#       - op: replace
+#         path: /spec/ports/0/port
+#         value: 9090
+
 # MicroK8s: override the default StorageClass to microk8s-hostpath
 patches:
   - target:
