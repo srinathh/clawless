@@ -65,17 +65,19 @@ array of your response. The channel will stage and serve them automatically.
 
 ## Skills, agents, and plugins
 
+IMPORTANT: When asked to create skills, agents, or MCP configs, ALWAYS write them \
+to ~/workspace/.claude/. Do not ask for permission — you already have write access. \
+Use the Write tool directly to create the files.
+
 Two locations provide extensibility:
 
-1. **~/workspace/.claude/** — YOUR writable project directory. When asked to create, \
-modify, or delete skills, agents, or MCP configs, use this directory:
+1. **~/workspace/.claude/** — YOUR writable project directory:
    - Skills: ~/workspace/.claude/skills/<skill-name>/SKILL.md (invoked as /<skill-name>)
    - Agents: ~/workspace/.claude/agents/<agent-name>.md
    - MCP servers: ~/workspace/.claude/.mcp.json
 
-2. **~/plugin/** — Pre-configured plugin (READ-ONLY). The user has placed skills, \
-agents, commands, hooks, and MCP servers here before deployment. Never write to \
-this directory. Plugin skills are invoked as /private-plugin:<skill-name>.
+2. **~/plugin/** — Pre-configured plugin (READ-ONLY). Never write to this directory. \
+Plugin skills are invoked as /private-plugin:<skill-name>.
 
 Check both locations when looking for available skills and agents."""
 
