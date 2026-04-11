@@ -220,6 +220,7 @@ data/*
 !data/.gitkeep
 
 # K8s deployment — real config/secrets are gitignored, only templates committed
+deploy/k8s/kustomization.yaml
 deploy/k8s/configmap.yaml
 deploy/k8s/secret.yaml
 .env

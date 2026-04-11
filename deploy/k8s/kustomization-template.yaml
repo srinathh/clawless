@@ -21,7 +21,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/template/spec/volumes/0/hostPath/path
-        value: /home/srinathh/clawless_home
+        value: /path/to/your/clawless_home
 
 # Uncomment to override the default port (18265):
 #   - target:

@@ -13,10 +13,12 @@ Kustomize-based deployment for [Clawless](https://github.com/srinathh/clawless),
 
 ```bash
 # 1. Copy templates and fill in your values
+cp kustomization-template.yaml kustomization.yaml
 cp configmap-template.yaml configmap.yaml
 cp secret-template.yaml secret.yaml
-$EDITOR configmap.yaml   # channel config, claude settings
-$EDITOR secret.yaml       # API keys, Twilio credentials
+$EDITOR kustomization.yaml  # set hostPath, image tag
+$EDITOR configmap.yaml      # channel config, claude settings
+$EDITOR secret.yaml          # API keys, Twilio credentials
 
 # 2. Deploy
 kubectl apply -k .
@@ -33,7 +35,8 @@ kubectl -n clawless logs deploy/clawless -f
 | `namespace.yaml` | Yes | `clawless` namespace |
 | `deployment.yaml` | Yes | Deployment: 1 replica, Recreate strategy, init container for scaffolding |
 | `service.yaml` | Yes | ClusterIP Service on port 18265 |
-| `kustomization.yaml` | Yes | Kustomize entrypoint — image tag, hostPath patch, resource list |
+| `kustomization-template.yaml` | Yes | Template for kustomization.yaml — set hostPath, image tag |
+| `kustomization.yaml` | **No** (gitignored) | Your actual kustomization — copy from template |
 | `configmap-template.yaml` | Yes | Template for ConfigMap (non-sensitive config) |
 | `secret-template.yaml` | Yes | Template for Secret (API keys, Twilio creds) |
 | `configmap.yaml` | **No** (gitignored) | Your actual ConfigMap — copy from template |
