@@ -28,6 +28,7 @@ class InboundMessage:
     sender: str  # channel-namespaced, e.g. "whatsapp:+1234567890"
     sender_name: str = ""  # display name if available (e.g. WhatsApp ProfileName)
     content: str = ""  # text body, may include [image: path] tags
+    message_id: str = ""  # platform-provided (Twilio MessageSid) or channel-generated UUID
     media_files: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 

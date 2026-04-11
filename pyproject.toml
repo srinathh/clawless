@@ -15,7 +15,6 @@ dependencies = [
     "httpx",
     "twilio",
     "pydantic-settings",
-    "sqlitedict",
 ]
 
 [project.scripts]

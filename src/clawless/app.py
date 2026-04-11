@@ -1,4 +1,4 @@
-"""FastAPI application — wires agent, channels, and config together."""
+"""FastAPI application — wires agent, channels, store, and config together."""
 
 from __future__ import annotations
 
@@ -10,11 +10,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from clawless.agent import AgentManager
+from clawless.channels.base import Channel
 from clawless.channels.whatsapp import TwilioWhatsAppChannel
 from clawless.config import ClawlessPaths, Settings
+from clawless.store import MessageStore
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
-# TODO: revert to INFO after debugging send_message issue
 logger = logging.getLogger(__name__)
 
 
@@ -31,32 +32,48 @@ async def lifespan(app: FastAPI):
     # media_dir is a runtime artifact, auto-created
     paths.media_dir.mkdir(parents=True, exist_ok=True)
 
+    # Message store — SQLite bus for inbound messages, sessions, cursors
+    store = MessageStore(paths.data_dir / "clawless.db")
+    app.state.store = store
+
     # Single plugin if plugin_dir has the plugin manifest
     plugins = [str(paths.plugin_dir)] if (paths.plugin_dir / ".claude-plugin").is_dir() else []
     if plugins:
         logger.info("Plugin loaded: %s", paths.plugin_dir)
 
-    app.state.agent = AgentManager(settings.claude, plugins, paths.workspace, paths.data_dir)
+    # Agent manager
+    agent = AgentManager(settings.claude, plugins, paths.workspace, paths.data_dir, store)
+    app.state.agent = agent
+
+    # Build channel map for routing (sender prefix → channel instance)
+    channels: dict[str, Channel] = {}
 
     if settings.channels.twilio_whatsapp:
-        app.state.twilio_whatsapp = TwilioWhatsAppChannel(
+        wa = TwilioWhatsAppChannel(
             settings.channels.twilio_whatsapp, paths.media_dir, app
         )
+        channels["whatsapp:"] = wa
+        app.state.twilio_whatsapp = wa
         from clawless.channels.whatsapp import WEBHOOK_PATH
         logger.info("Twilio WhatsApp webhook at %s", WEBHOOK_PATH)
 
     if settings.channels.test:
         from clawless.channels.test import TestChannel
-        app.state.test = TestChannel(settings.channels.test, app)
-        asyncio.create_task(app.state.test.run())
+        tc = TestChannel(settings.channels.test, app)
+        channels["test:"] = tc
+        app.state.test = tc
+        asyncio.create_task(tc.run())
         logger.info("Test channel active — %d scripted messages",
                      len(settings.channels.test.messages))
+
+    # Start the message loop — polls store for unprocessed messages
+    asyncio.create_task(agent.start_message_loop(channels))
 
     logger.info("Clawless ready")
     yield
 
     logger.info("Shutting down clawless")
-    await app.state.agent.close_all()
+    await agent.close_all()
 
 
 app = FastAPI(title="clawless", lifespan=lifespan)

@@ -16,8 +16,10 @@ Read through the documentation and plans to understand the architecture:
 ```
 src/clawless/
 ├── config.py          # ClawlessPaths, Settings, all config models
-├── app.py             # FastAPI lifespan, channel wiring, entry point
-├── agent.py           # AgentManager — SDK client lifecycle, session persistence
+├── app.py             # FastAPI lifespan, channel wiring, message loop, entry point
+├── agent.py           # AgentManager — SDK client lifecycle, structured output, message loop
+├── store.py           # MessageStore — SQLite bus for messages, sessions, cursors
+├── tools.py           # MCP tool harness (empty, for future tools)
 ├── init.py            # clawless-init command — scaffolds home directory
 ├── utils.py           # Text splitting utility
 └── channels/
@@ -62,7 +64,7 @@ Always use `-s` to see agent responses printed during integration tests.
 After running integration tests, review the printed agent responses carefully for unexpected behavior:
 - Extra or duplicate responses beyond the scripted messages
 - Empty-message replies ("your message came through empty", etc.)
-- Agent not using the send_message tool
+- Single-character spam or dot responses (should be impossible with structured output)
 - Responses that don't match the scripted input
 
 Show the full agent responses to the user so they can review them.

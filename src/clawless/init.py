@@ -28,10 +28,9 @@ through messaging channels (currently WhatsApp).
 Your working directory is ~/workspace/.
 
 ## Extensibility
-- To CREATE new skills, agents, or MCP configs: use ~/workspace/.claude/ (standalone format)
-  - Skills: ~/workspace/.claude/skills/<name>/SKILL.md
-  - Agents: ~/workspace/.claude/agents/<name>.md
-  - MCP servers: ~/workspace/.claude/.mcp.json
+- To CREATE new skills or agents: use ~/workspace/plugin/ (writable plugin)
+  - Skills: ~/workspace/plugin/skills/<name>/SKILL.md
+  - Agents: ~/workspace/plugin/agents/<name>.md
 - Pre-configured extensions from the user are in ~/plugin/ (read-only, do not modify)
 """
 
@@ -78,13 +77,19 @@ def init_home(path: Path) -> None:
 
     # Workspace .claude directory for project-level SDK settings
     (path / "workspace" / ".claude").mkdir(parents=True, exist_ok=True)
-    (path / "workspace" / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
-    (path / "workspace" / ".claude" / "agents").mkdir(parents=True, exist_ok=True)
 
     # CLAUDE.md — agent identity and workspace context (project-level only)
     project_claude_md = path / "workspace" / ".claude" / "CLAUDE.md"
     if not project_claude_md.exists():
         project_claude_md.write_text(PROJECT_CLAUDE_MD_TEMPLATE)
+
+    # Writable plugin inside workspace — agent creates skills/agents here
+    ws_plugin = path / "workspace" / "plugin"
+    for ws_plugin_subdir in [".claude-plugin", "skills", "agents", "commands", "hooks"]:
+        (ws_plugin / ws_plugin_subdir).mkdir(parents=True, exist_ok=True)
+    ws_manifest = ws_plugin / ".claude-plugin" / "plugin.json"
+    if not ws_manifest.exists():
+        ws_manifest.write_text(json.dumps({"name": "workspace-plugin"}, indent=2) + "\n")
 
     # Config template
     config_dest = path / "clawless.toml"
@@ -113,10 +118,11 @@ def main() -> None:
     print(f"  {path}/")
     print(f"  ├── .claude/                # SDK runtime state (sessions, memory)")
     print(f"  ├── workspace/              # Agent working directory (Claude SDK cwd)")
-    print(f"  │   └── .claude/            # Project-level skills, agents, config")
-    print(f"  │       ├── CLAUDE.md       # Agent instructions")
-    print(f"  │       ├── skills/         # Bot-created skills (writable)")
-    print(f"  │       └── agents/         # Bot-created agents (writable)")
+    print(f"  │   ├── .claude/            # Project-level SDK settings")
+    print(f"  │   │   └── CLAUDE.md       # Agent instructions")
+    print(f"  │   └── plugin/             # Writable plugin (bot-created skills/agents)")
+    print(f"  │       ├── skills/         # Bot-created skills")
+    print(f"  │       └── agents/         # Bot-created agents")
     print(f"  ├── data/                   # App runtime state (session map)")
     print(f"  ├── logs/                   # Application logs")
     print(f"  ├── clawless.toml           # Edit this to configure channels")

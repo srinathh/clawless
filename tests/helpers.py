@@ -7,14 +7,20 @@ from clawless.init import init_home
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-TOML_CONFIG = """
+TOML_CONFIG = """\
 [claude]
 max_turns = 8
 max_budget_usd = 1.00
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done."]
+messages = [
+    "Hello, who are you?",
+    "What is 2+2?",
+    "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.",
+    '''Create a skill called 'sysinfo' that when invoked runs this exact command using Bash: python3 -c "import platform; print('SYSINFO:' + platform.system() + ':' + platform.machine())" and reports the output to the user. Confirm when done.''',
+    "Run the /workspace-plugin:sysinfo skill and tell me exactly what it printed.",
+]
 """
 
 
@@ -31,7 +37,7 @@ def create_test_home(prefix: str = "") -> Path:
 def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
     """Shared assertions for scripted test channel responses.
 
-    Prints each response, validates basics, checks tool usage marker,
+    Prints each response, validates basics, checks host-controlled delivery,
     and verifies the agent created test.txt in the workspace.
     """
     assert len(responses) >= 5
@@ -40,23 +46,32 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
         assert resp["text"], f"Response {i + 1} is empty"
         assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
         assert resp["to"] == "test:user1"
+        # Validate no dot-spam (the bug this architecture fixes)
+        assert resp["text"].strip() not in (".", "..", "...", ""), (
+            f"Response {i + 1} is dot-spam: {resp['text']!r}"
+        )
 
-    # Verify send_message tool was used (marker text from third scripted message)
-    all_text = " ".join(r["text"] for r in responses)
-    assert "tool-test-ok" in all_text, (
-        f"Expected 'tool-test-ok' in responses from send_message tool, "
-        f"got: {[r['text'][:80] for r in responses]}"
-    )
-
-    # Verify agent created test.txt in workspace (fourth scripted message)
+    # Verify agent created test.txt in workspace (third scripted message)
     test_file = run_dir / "workspace" / "test.txt"
     assert test_file.exists(), f"Agent did not create {test_file}"
     assert test_file.read_text().strip() == "test", (
         f"Expected 'test' in {test_file}, got: {test_file.read_text()!r}"
     )
 
-    # Verify skill created in standalone dir, not plugin dir (fifth scripted message)
-    skill_file = run_dir / "workspace" / ".claude" / "skills" / "greet" / "SKILL.md"
+    # Verify skill created in writable plugin, not read-only plugin (fourth scripted message)
+    skill_file = run_dir / "workspace" / "plugin" / "skills" / "sysinfo" / "SKILL.md"
+    readonly_skill = run_dir / "plugin" / "skills" / "sysinfo" / "SKILL.md"
     assert skill_file.exists(), f"Agent did not create skill at {skill_file}"
-    plugin_skill = run_dir / "plugin" / "skills" / "greet" / "SKILL.md"
-    assert not plugin_skill.exists(), f"Agent wrongly created skill in plugin dir at {plugin_skill}"
+    assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
+
+    # Verify skill was invoked and actually ran the python script (fifth scripted message)
+    # The output must contain "SYSINFO:Linux:" which can only come from running the script
+    all_text = " ".join(r["text"] for r in responses)
+    assert "SYSINFO:" in all_text, (
+        f"Expected 'SYSINFO:' from sysinfo skill invocation (proves script ran), "
+        f"got: {[r['text'][:100] for r in responses]}"
+    )
+
+    # Verify clawless.db was created by the store
+    db_file = run_dir / "data" / "clawless.db"
+    assert db_file.exists(), f"MessageStore DB not created at {db_file}"
