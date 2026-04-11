@@ -15,7 +15,6 @@ from clawless.channels.whatsapp import TwilioWhatsAppChannel
 from clawless.config import ClawlessPaths, Settings
 from clawless.store import MessageStore
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -23,6 +22,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     paths = ClawlessPaths()
     settings = Settings()  # type: ignore[call-arg]
+    logging.basicConfig(level=settings.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s.%(funcName)s %(message)s")
 
     # Ensure SDK can read the API key from environment
     os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key

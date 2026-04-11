@@ -98,6 +98,7 @@ class ChannelsConfig(BaseModel):
 class Settings(BaseSettings):
     anthropic_api_key: str
     port: int = 18265
+    log_level: str = "DEBUG"
     claude: ClaudeConfig = ClaudeConfig()
     channels: ChannelsConfig = ChannelsConfig()
 
