@@ -52,16 +52,16 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
         f"Expected 'test' in {test_file}, got: {test_file.read_text()!r}"
     )
 
-    # Verify skill created in standalone dir, not plugin dir (fourth scripted message)
+    # Verify skill created in writable plugin, not read-only plugin (fourth scripted message)
     # Note: skill creation may fail due to turn/budget limits — check if attempted
-    skill_file = run_dir / "workspace" / ".claude" / "skills" / "greet" / "SKILL.md"
-    plugin_skill = run_dir / "plugin" / "skills" / "greet" / "SKILL.md"
+    skill_file = run_dir / "workspace" / "plugin" / "skills" / "greet" / "SKILL.md"
+    readonly_skill = run_dir / "plugin" / "skills" / "greet" / "SKILL.md"
     if skill_file.exists():
-        assert not plugin_skill.exists(), f"Agent wrongly created skill in plugin dir at {plugin_skill}"
+        assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
     else:
         # Agent may not have created the skill (turn/budget limit) — not a failure
-        # as long as it didn't write to the plugin dir
-        assert not plugin_skill.exists(), f"Agent wrongly created skill in plugin dir at {plugin_skill}"
+        # as long as it didn't write to the read-only plugin dir
+        assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
 
     # Verify clawless.db was created by the store
     db_file = run_dir / "data" / "clawless.db"

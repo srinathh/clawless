@@ -66,15 +66,14 @@ array of your response. The channel will stage and serve them automatically.
 ## Skills, agents, and plugins
 
 IMPORTANT: When asked to create skills, agents, or MCP configs, ALWAYS write them \
-to ~/workspace/.claude/. Do not ask for permission — you already have write access. \
+to ~/workspace/plugin/. Do not ask for permission — you already have write access. \
 Use the Write tool directly to create the files.
 
 Two locations provide extensibility:
 
-1. **~/workspace/.claude/** — YOUR writable project directory:
-   - Skills: ~/workspace/.claude/skills/<skill-name>/SKILL.md (invoked as /<skill-name>)
-   - Agents: ~/workspace/.claude/agents/<agent-name>.md
-   - MCP servers: ~/workspace/.claude/.mcp.json
+1. **~/workspace/plugin/** — YOUR writable plugin directory:
+   - Skills: ~/workspace/plugin/skills/<skill-name>/SKILL.md (invoked as /workspace-plugin:<skill-name>)
+   - Agents: ~/workspace/plugin/agents/<agent-name>.md
 
 2. **~/plugin/** — Pre-configured plugin (READ-ONLY). Never write to this directory. \
 Plugin skills are invoked as /private-plugin:<skill-name>.
@@ -122,6 +121,10 @@ class AgentManager:
         plugins: list[SdkPluginConfig] = [
             SdkPluginConfig(type="local", path=p) for p in self._plugins if p
         ]
+        # Writable plugin inside workspace — agent creates skills/agents here
+        ws_plugin = self._workspace / "plugin"
+        if (ws_plugin / ".claude-plugin").is_dir():
+            plugins.append(SdkPluginConfig(type="local", path=str(ws_plugin)))
         options = ClaudeAgentOptions(
             system_prompt={
                 "type": "preset",
