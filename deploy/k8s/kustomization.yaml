@@ -8,3 +8,13 @@ resources:
   - secret.yaml
   - deployment.yaml
   - service.yaml
+
+# Uncomment to override the default storageClassName (microk8s-hostpath):
+# patches:
+#   - target:
+#       kind: PersistentVolumeClaim
+#       name: clawless-home
+#     patch: |
+#       - op: replace
+#         path: /spec/storageClassName
+#         value: my-storage-class
