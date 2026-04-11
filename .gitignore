@@ -219,8 +219,9 @@ __marimo__/
 data/*
 !data/.gitkeep
 
-# ignore all secrets
-*secret.yaml
+# K8s deployment — real config/secrets are gitignored, only templates committed
+deploy/k8s/configmap.yaml
+deploy/k8s/secret.yaml
 .env
 
 # Runtime state

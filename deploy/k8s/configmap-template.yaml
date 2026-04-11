@@ -1,0 +1,32 @@
+# Copy this file to configmap.yaml and edit the clawless.toml content.
+# configmap.yaml is gitignored and must never be committed.
+#
+#   cp configmap-template.yaml configmap.yaml
+#   $EDITOR configmap.yaml
+#   kubectl apply -k .
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clawless-config
+data:
+  clawless.toml: |
+    # Clawless configuration — edit before deploying.
+    # Sensitive values (API keys, tokens) go in secret.yaml as env vars,
+    # NOT here. Env vars take precedence over this file.
+
+    [claude]
+    max_turns = 30
+    max_budget_usd = 1.0
+    max_concurrent_requests = 3
+
+    # Channels — only configured channels get instantiated.
+    # Sensitive channel fields belong in secret.yaml as env vars
+    # (e.g. CHANNELS__TWILIO_WHATSAPP__ACCOUNT_SID).
+    # Only non-sensitive fields should go here.
+
+    # [channels.twilio_whatsapp]
+    # ack_message = "Thinking..."
+
+    # [channels.test]
+    # sender = "test:user1"
+    # messages = ["Hello", "What is 2+2?"]

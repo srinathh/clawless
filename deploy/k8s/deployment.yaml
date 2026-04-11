@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clawless
+  labels:
+    app: clawless
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: clawless
+  template:
+    metadata:
+      labels:
+        app: clawless
+    spec:
+      nodeSelector:
+        role: primary
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # Init container mounts the raw PVC to scaffold the directory tree on
+      # first run (idempotent). It uses /mnt/ because the subdirectories
+      # don't exist yet — the main container then mounts them individually
+      # into /home/clawless/ via subPath.
+      initContainers:
+        - name: init-home
+          image: ghcr.io/srinathh/clawless
+          command: ["clawless-init", "/mnt/clawless-home"]
+          volumeMounts:
+            - name: clawless-home
+              mountPath: /mnt/clawless-home
+      containers:
+        - name: clawless
+          image: ghcr.io/srinathh/clawless
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 18265
+              name: http
+          envFrom:
+            - secretRef:
+                name: clawless-secrets
+          env:
+            - name: PORT
+              value: "18265"
+            - name: LOG_LEVEL
+              value: "INFO"
+          command: ["/bin/bash", "-c", "clawless 2>&1 | tee /home/clawless/logs/clawless.log"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: clawless-home
+              mountPath: /home/clawless/.claude
+              subPath: .claude
+            - name: clawless-home
+              mountPath: /home/clawless/workspace
+              subPath: workspace
+            - name: clawless-home
+              mountPath: /home/clawless/data
+              subPath: data
+            - name: clawless-home
+              mountPath: /home/clawless/logs
+              subPath: logs
+            - name: clawless-home
+              mountPath: /home/clawless/plugin
+              subPath: plugin
+              readOnly: true
+            - name: clawless-config
+              mountPath: /home/clawless/clawless.toml
+              subPath: clawless.toml
+              readOnly: true
+      volumes:
+        - name: clawless-home
+          persistentVolumeClaim:
+            claimName: clawless-home
+        - name: clawless-config
+          configMap:
+            name: clawless-config

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clawless-home
+spec:
+  # Uses the cluster's default StorageClass when storageClassName is omitted.
+  # Override via patch in kustomization.yaml for a specific class.
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
