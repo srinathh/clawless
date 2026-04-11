@@ -14,7 +14,7 @@ max_budget_usd = 1.00
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done."]
+messages = ["Hello, who are you?", "What is 2+2?", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done.", "Invoke the /workspace-plugin:greet skill and tell me what it said."]
 """
 
 
@@ -34,7 +34,7 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
     Prints each response, validates basics, checks host-controlled delivery,
     and verifies the agent created test.txt in the workspace.
     """
-    assert len(responses) >= 4
+    assert len(responses) >= 5
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"], f"Response {i + 1} is empty"
@@ -62,6 +62,14 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
         # Agent may not have created the skill (turn/budget limit) — not a failure
         # as long as it didn't write to the read-only plugin dir
         assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
+
+    # Verify skill was invoked (fifth scripted message)
+    # The response should contain "Hello!" from the greet skill
+    all_text = " ".join(r["text"] for r in responses)
+    assert "Hello!" in all_text, (
+        f"Expected 'Hello!' from greet skill invocation in responses, "
+        f"got: {[r['text'][:80] for r in responses]}"
+    )
 
     # Verify clawless.db was created by the store
     db_file = run_dir / "data" / "clawless.db"
