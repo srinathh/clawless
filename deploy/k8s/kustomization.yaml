@@ -4,12 +4,7 @@ namespace: clawless
 resources:
   - namespace.yaml
   - pvc.yaml
+  - configmap.yaml
   - secret.yaml
   - deployment.yaml
   - service.yaml
-configMapGenerator:
-  - name: clawless-config
-    files:
-      - clawless.toml
-    options:
-      disableNameSuffixHash: true
