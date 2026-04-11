@@ -9,7 +9,7 @@ All paths and settings originate here.
 
 **ClawlessPaths** derives every path from `Path.home()`:
 - `workspace` — `~/workspace` (agent's cwd)
-- `data_dir` — `~/data` (sessions.db)
+- `data_dir` — `~/data` (clawless.db)
 - `plugin_dir` — `~/plugin` (Claude Code plugin)
 - `media_dir` — `~/workspace/media` (runtime artifact, auto-created)
 
@@ -23,12 +23,27 @@ priority order:
 2. `.env` file in CWD (gracefully ignored if missing)
 3. TOML file at `~/clawless.toml` (gracefully ignored if missing)
 
-This is configured in `settings_customise_sources()` which returns
-`(env_settings, dotenv_settings, toml_source)`.
-
 `anthropic_api_key` is a required field — pydantic raises `ValidationError` if
 missing from all sources. A `model_validator` also enforces that at least one
 channel is configured.
+
+## `src/clawless/store.py` — Message Store
+
+SQLite-backed store with WAL mode, three tables:
+
+- **`sessions`**: sender (PK) → session_id. Replaces the old SqliteDict.
+- **`messages`**: Inbound message bus. PK is the channel-provided message ID
+  (Twilio MessageSid, test UUID). `INSERT OR IGNORE` provides dedup.
+- **`cursors`**: Per-sender watermark for crash recovery.
+
+**Key methods**:
+- `store_message(id, sender, content, inbound, ...)` → bool (True if inserted)
+- `get_unprocessed(sender)` → messages after cursor, ordered by rowid
+- `get_all_senders_with_unprocessed()` → senders needing processing
+- `get/set_cursor(sender, msg_id)` → per-sender watermark
+- `get/set_session(sender, session_id)` → agent session persistence
+
+Uses `rowid` ordering (not timestamps) to avoid same-second collisions.
 
 ## `src/clawless/app.py` — Application Wiring
 
@@ -36,17 +51,17 @@ The FastAPI lifespan function is the central wiring point:
 
 1. Constructs `ClawlessPaths` and `Settings`
 2. Creates `media_dir` if missing
-3. Detects plugin at `~/plugin/.claude-plugin/`
-4. Creates `AgentManager` with claude config, plugin paths, workspace, and data_dir
-5. Conditionally creates `TwilioWhatsAppChannel` and/or `TestChannel` based on config
-6. Channel validation is handled by `Settings` model_validator at construction time
-
-The test channel is special — it starts immediately via `asyncio.create_task(test.run())`
-since it feeds scripted messages rather than waiting for webhooks.
+3. Creates `MessageStore` at `data_dir/clawless.db`
+4. Detects plugin at `~/plugin/.claude-plugin/`
+5. Creates `AgentManager` with config, plugin paths, workspace, data_dir, and store
+6. Builds channel map (sender prefix → channel instance):
+   - `"whatsapp:"` → `TwilioWhatsAppChannel`
+   - `"test:"` → `TestChannel`
+7. Starts the message loop via `asyncio.create_task(agent.start_message_loop(channels))`
+8. Test channel starts immediately via `asyncio.create_task(tc.run())`
 
 `main()` is the CLI entry point (`clawless` command). Reads `Settings` for the port
-and runs uvicorn. The app module path `clawless.app:app` is passed as a string so
-uvicorn imports it fresh.
+and runs uvicorn.
 
 ## `src/clawless/agent.py` — Agent Session Management
 
@@ -57,28 +72,36 @@ The core of the system. `AgentManager` manages one `ClaudeSDKClient` per sender.
 - `_concurrency_gate: asyncio.Semaphore` — global cap on concurrent SDK calls
 - Both are acquired in `process_message()` via `async with lock, self._concurrency_gate`
 
+**Structured output**: `RESPONSE_SCHEMA` defines the JSON schema for agent responses:
+`{"text": "...", "media": [...]}`. Set via `output_format` on `ClaudeAgentOptions`.
+The SDK constrains the agent's final response to match this schema.
+
 **Session persistence**:
-- `_session_map: SqliteDict` at `data_dir/sessions.db`, autocommit enabled
-- Maps sender string -> CLI session UUID
-- On client creation, `_build_options()` sets `system_prompt` using a `claude_code`
-  preset with framework-specific instructions appended, and checks for a persisted
-  session to set `ClaudeAgentOptions.resume`
+- `_store.get_session()` / `_store.set_session()` maps sender → CLI session UUID
+- On client creation, `_build_options()` checks for a persisted session to set
+  `ClaudeAgentOptions.resume`
 - New session IDs arrive via `SystemMessage` with `subtype == "init"` during
   response streaming, and are persisted immediately
 
 **Message processing** (`process_message()`):
 1. Acquires per-sender lock + semaphore
-2. Gets or creates a `_SessionClient` (wrapper around `ClaudeSDKClient`)
-3. Builds prompt with channel formatting instructions prepended
-4. Calls `client.query(prompt)` then iterates `client.receive_response()`
-5. Captures session ID from `SystemMessage.init` and final text from `ResultMessage`
-6. Sends response via `channel.send()`
-7. On timeout: closes the client, sends error message
-8. On exception: logs, sends generic error message
+2. Advances cursor optimistically, saves old cursor for rollback
+3. Gets or creates a `_SessionClient`
+4. Builds prompt with channel formatting instructions prepended
+5. Calls `client.query(prompt)` then iterates `client.receive_response()`
+6. Captures session ID from `SystemMessage.init`
+7. Reads `ResultMessage.structured_output` → `{"text": "...", "media": [...]}`
+8. Falls back to `ResultMessage.result` as plain text if structured output failed
+9. Host sends response via `channel.send()`
+10. On no output: sends failure message ("Sorry, I wasn't able to generate a response.")
+11. On timeout: closes client, sends timeout message
+12. On error: sends error message, rolls back cursor if no output was sent
 
-**Client lifecycle**: Clients are created lazily via `_get_or_create_client()` and
-use the async context manager protocol (`__aenter__`/`__aexit__`). `close_all()` is
-called during app shutdown to clean up all clients and close the session store.
+**Message loop** (`start_message_loop()`):
+- Polls `store.get_all_senders_with_unprocessed()` every ~1 second
+- For each sender with unprocessed messages, fetches them and routes to the
+  correct channel via `_resolve_channel()` (prefix matching)
+- Creates `asyncio.create_task()` for each message
 
 ## `src/clawless/channels/base.py` — Channel Interface
 
@@ -93,11 +116,9 @@ Defines the contract between channels and the rest of the system.
 - `sender` — channel-namespaced identity (e.g. `whatsapp:+1234567890`)
 - `sender_name` — display name if available
 - `content` — text body, may include `[mime/type: /path/to/file]` tags
+- `message_id` — platform-provided (Twilio MessageSid) or channel-generated UUID
 - `media_files` — list of local file paths
 - `metadata` — platform-specific extras
-
-The sender string is globally unique across channels and doubles as the session key
-in AgentManager — no separate channel prefix needed.
 
 ## `src/clawless/channels/whatsapp.py` — Twilio WhatsApp
 
@@ -113,39 +134,35 @@ The most complex channel. Handles the full Twilio webhook lifecycle.
 1. Validates Twilio signature using `RequestValidator`
 2. Checks sender against `allowed_senders` allowlist
 3. Downloads any media attachments via `_download_media()`
-4. Builds `InboundMessage` with media tagged as `[mime/type: path]` in content
-5. Fires `asyncio.create_task(agent.process_message(...))` — fire-and-forget
-6. Returns TwiML with `ack_message` ("Thinking...") immediately
-
-**Media download** (`_download_media()`):
-- Fetches from Twilio media URLs using Basic Auth (account_sid:auth_token)
-- Determines MIME type from Content-Type header
-- Saves to `inbound/` with UUID filename + appropriate extension
-- Handles errors gracefully (logs and skips failed downloads)
+4. Writes to store via `store.store_message(id=message_sid, ...)` — dedup via PK
+5. Returns TwiML with `ack_message` ("Thinking...") immediately
+6. Message loop picks up the message asynchronously
 
 **Outbound flow** (`send()`):
 - Splits text using `split_text()` at 1600 chars (Twilio limit)
 - Sends each text chunk via `twilio.messages.create()`
 - For media: stages local files via `_stage_media()` to get a public URL,
-  then sends via separate `messages.create()` calls (Twilio ignores body for media)
-
-**Media serving** (`_serve_media()`):
-- Serves staged outbound media at `GET {webhook_path}/media/{filename}`
-- Path traversal protection via `resolve()` + `is_relative_to()` check
+  then sends via separate `messages.create()` calls
 
 ## `src/clawless/channels/test.py` — Test Channel
 
 Minimal channel for integration testing without external services.
 
-**`run()`** iterates through `config.messages` sequentially, calling
-`agent.process_message()` for each. Sets `_done` event when complete, captures
-any exception in `_error`.
+**`run()`** writes scripted messages to the store with UUID message IDs
+(`test_<uuid>`), then waits for the message loop to process them by polling
+the response count.
 
 **`send()`** just appends to `_responses` list — no external API calls.
 
 **HTTP endpoints** for test assertions:
 - `GET /test/responses` — returns all captured responses
 - `GET /test/status` — returns done flag, message count, response count, error
+
+## `src/clawless/tools.py` — MCP Tool Harness
+
+Defines an in-process MCP server registered with the agent. Currently empty —
+tools can be added here for non-contextual side effects. `build_clawless_mcp_server()`
+returns a server with an empty tool list.
 
 ## `src/clawless/utils.py` — Text Splitting
 
@@ -154,9 +171,8 @@ Single function: `split_text(text, max_len) -> list[str]`
 Splitting strategy (in priority order):
 1. Prefer newline breaks (preserves paragraph structure)
 2. Fall back to space breaks (preserves words)
-3. Hard-cut at `max_len` if no break point found (for long unbreakable strings)
+3. Hard-cut at `max_len` if no break point found
 
-Each chunk is `lstrip()`ed to remove leading whitespace from continuation chunks.
 Used by WhatsApp channel for Twilio's 1600-character limit.
 
 ## `src/clawless/init.py` — Home Directory Scaffolding
@@ -164,8 +180,8 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 `clawless-init [path]` creates the prescribed directory structure.
 
 **Templates** (written only if file doesn't exist):
-- `PROJECT_CLAUDE_MD_TEMPLATE` — agent identity, communication style, and workspace context (`~/workspace/.claude/CLAUDE.md`)
-- `CONFIG_TEMPLATE` — skeleton clawless.toml with all channel options commented out
+- `PROJECT_CLAUDE_MD_TEMPLATE` — agent identity and workspace context
+- `CONFIG_TEMPLATE` — skeleton clawless.toml
 
 **`init_home(path)`** creates:
 - `.claude/`, `workspace/`, `data/` directories
@@ -174,36 +190,32 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 - CLAUDE.md template at project level
 - Config template at top level
 
-Used by both the CLI command and test fixtures (which call `init_home()` directly).
-
 ## Tests
 
-### `tests/test_config.py` — Unit Tests
+### `tests/test_store.py` — Store Unit Tests
 
-Tests `ClawlessPaths` validation (finds correct dirs, raises on missing dirs) and
-`Settings` loading (TOML parsing, env var overrides, defaults, empty channels).
-Each test creates an isolated home via `init_home()` and sets `HOME`.
+Tests MessageStore operations: session roundtrip, message insertion/dedup, cursor
+get/set/rollback, unprocessed message queries (by rowid ordering), WAL mode.
+
+### `tests/test_config.py` — Config Unit Tests
+
+Tests `ClawlessPaths` validation and `Settings` loading (TOML, env vars, defaults).
 
 ### `tests/test_base.py` — InboundMessage Tests
 
-Tests InboundMessage dataclass construction (minimal fields, full fields, sender
-namespacing across different channels).
+Tests InboundMessage dataclass construction and sender namespacing.
 
 ### `tests/test_utils.py` — Text Splitting Tests
 
-Tests `split_text()` edge cases: empty string, short string, exact length, newline
-splits, space splits, hard cuts, multiple chunks.
+Tests `split_text()` edge cases.
 
 ### `tests/test_channel_integration.py` — Host Integration Test
 
 Full pipeline test running in-process. Session-scoped async fixture creates isolated
 home, starts app via ASGI transport. Requires `ANTHROPIC_API_KEY` env var. Polls test
-channel endpoints, asserts on agent responses, checks for auth failures.
+channel endpoints, asserts on agent responses, verifies `clawless.db` exists.
 
 ### `tests/test_docker_integration.py` — Docker Integration Test
 
-Marked `@pytest.mark.docker`, skipped by default. Session-scoped fixture builds
-Docker image, starts container via `docker compose up`, requires `ANTHROPIC_API_KEY`
-(skips if not set), polls health and test
-channel endpoints over real HTTP. Streams docker compose output to terminal.
-Port 18266 (vs 18265 prod default).
+Marked `@pytest.mark.docker`, skipped by default. Builds Docker image, starts
+container, polls health and test channel endpoints over real HTTP.

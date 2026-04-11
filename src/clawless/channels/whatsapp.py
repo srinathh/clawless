@@ -16,7 +16,7 @@ from twilio.request_validator import RequestValidator
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.messaging_response import MessagingResponse
 
-from clawless.channels.base import Channel, InboundMessage
+from clawless.channels.base import Channel
 from clawless.config import TwilioWhatsAppConfig
 from clawless.utils import split_text
 
@@ -114,16 +114,19 @@ class TwilioWhatsAppChannel(Channel):
         logger.info(f"WhatsApp msg {message_sid}: {num_media} attachments")
         logger.debug(f"WhatsApp msg {message_sid} from {sender} ({profile_name}): {body[:80]}")
 
-        message = InboundMessage(
+        # Write to message store — the message loop picks it up for processing.
+        # Dedup is handled by the store's PK constraint (message_sid as id).
+        store = request.app.state.store
+        stored = store.store_message(
+            id=message_sid,
             sender=sender,
-            sender_name=profile_name,
             content=content,
-            media_files=media_files,
-            metadata={"message_sid": message_sid},
+            inbound=True,
+            sender_name=profile_name,
+            media_files=media_files or None,
         )
-
-        # Fire-and-forget: return ack to Twilio immediately, process async
-        asyncio.create_task(request.app.state.agent.process_message(message, self))
+        if not stored:
+            logger.info("Duplicate message %s from %s — dropping", message_sid, sender)
 
         resp = MessagingResponse()
         resp.message(self._config.ack_message)

@@ -14,7 +14,7 @@ max_budget_usd = 1.00
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Use the send_message tool to send me a message saying exactly 'tool-test-ok'", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done."]
+messages = ["Hello, who are you?", "What is 2+2?", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done."]
 """
 
 
@@ -31,32 +31,33 @@ def create_test_home(prefix: str = "") -> Path:
 def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
     """Shared assertions for scripted test channel responses.
 
-    Prints each response, validates basics, checks tool usage marker,
+    Prints each response, validates basics, checks host-controlled delivery,
     and verifies the agent created test.txt in the workspace.
     """
-    assert len(responses) >= 5
+    assert len(responses) >= 4
     for i, resp in enumerate(responses):
         print(f"\n--- Agent response {i + 1} (to: {resp['to']}) ---\n{resp['text']}\n")
         assert resp["text"], f"Response {i + 1} is empty"
         assert "not logged in" not in resp["text"].lower(), f"Agent not authenticated: {resp['text']}"
         assert resp["to"] == "test:user1"
+        # Validate no single-character spam (dot-spam bug)
+        assert len(resp["text"].strip()) > 1, (
+            f"Response {i + 1} is trivially short: {resp['text']!r}"
+        )
 
-    # Verify send_message tool was used (marker text from third scripted message)
-    all_text = " ".join(r["text"] for r in responses)
-    assert "tool-test-ok" in all_text, (
-        f"Expected 'tool-test-ok' in responses from send_message tool, "
-        f"got: {[r['text'][:80] for r in responses]}"
-    )
-
-    # Verify agent created test.txt in workspace (fourth scripted message)
+    # Verify agent created test.txt in workspace (third scripted message)
     test_file = run_dir / "workspace" / "test.txt"
     assert test_file.exists(), f"Agent did not create {test_file}"
     assert test_file.read_text().strip() == "test", (
         f"Expected 'test' in {test_file}, got: {test_file.read_text()!r}"
     )
 
-    # Verify skill created in standalone dir, not plugin dir (fifth scripted message)
+    # Verify skill created in standalone dir, not plugin dir (fourth scripted message)
     skill_file = run_dir / "workspace" / ".claude" / "skills" / "greet" / "SKILL.md"
     assert skill_file.exists(), f"Agent did not create skill at {skill_file}"
     plugin_skill = run_dir / "plugin" / "skills" / "greet" / "SKILL.md"
     assert not plugin_skill.exists(), f"Agent wrongly created skill in plugin dir at {plugin_skill}"
+
+    # Verify clawless.db was created by the store
+    db_file = run_dir / "data" / "clawless.db"
+    assert db_file.exists(), f"MessageStore DB not created at {db_file}"

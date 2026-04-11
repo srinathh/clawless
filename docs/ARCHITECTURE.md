@@ -4,11 +4,18 @@
 
 Clawless is a minimal, self-hosted personal AI assistant that connects messaging
 channels to the Claude Agent SDK. A FastAPI app wires together configuration,
-agent session management, and pluggable messaging channels — all running in Docker.
+a message store (SQLite bus), agent session management, and pluggable messaging
+channels — all running in Docker.
 
 ```
-Messaging Platform ──webhook──> Channel ──fire-and-forget──> AgentManager ──SDK──> Claude
-       <──reply──────────────── Channel <──channel.send()──── AgentManager <──result── Claude
+Messaging Platform ──webhook──> Channel ──store.store_message()──> SQLite
+                                                                     │
+Message Loop (polls SQLite) ────────────────────────────────────────>│
+  ├─ Routes to channel by sender prefix                              │
+  └─ AgentManager.process_message()                                  │
+       ├─ SDK query with structured output schema                    │
+       └─ ResultMessage.structured_output → {"text": "...", "media": [...]}
+            └─ HOST sends via channel.send()
 ```
 
 ## Directory Convention
@@ -28,7 +35,7 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │       ├── skills/         # Bot-created skills (standalone format, writable)
 │       └── agents/         # Bot-created agents (standalone format, writable)
 ├── data/                   # App runtime state. rw, NOT agent-accessible
-│   └── sessions.db         # Session persistence via sqlitedict (auto-created)
+│   └── clawless.db         # SQLite message store (sessions, messages, cursors)
 ├── clawless.toml           # App config (channels, claude options). ro in Docker
 └── plugin/                 # Single plugin dir with prescribed structure. ro in Docker
     ├── .claude-plugin/
@@ -50,7 +57,7 @@ path fields — everything is conventional.
 **CLAUDE.md**: `clawless-init` scaffolds a single CLAUDE.md at
 `~/workspace/.claude/CLAUDE.md`, loaded by the SDK via `setting_sources=["user", "project"]`.
 It defines the agent's identity, communication style, and workspace context. Framework
-internals (send_message usage, media handling, plugin info) are in the `system_prompt`
+internals (structured output, media handling, plugin info) are in the `system_prompt`
 parameter instead. Written only if it doesn't already exist, so user customizations
 survive re-runs of init.
 
@@ -69,7 +76,8 @@ Settings
 │   ├── max_turns: int = 30
 │   ├── max_budget_usd: float = 1.0
 │   ├── max_concurrent_requests: int = 3
-│   └── request_timeout: float = 300.0
+│   ├── request_timeout: float = 300.0
+│   └── bot_name: str = "Clawless"
 └── channels: ChannelsConfig        # at least one required (model_validator)
     ├── twilio_whatsapp: TwilioWhatsAppConfig | None
     └── test: TestChannelConfig | None
@@ -78,16 +86,33 @@ Settings
 `anthropic_api_key` is required — pydantic raises `ValidationError` if missing.
 A `model_validator` also enforces that at least one channel is configured.
 
+## Message Store
+
+`MessageStore` in `store.py` is an SQLite database (WAL mode) with three tables:
+
+| Table | Purpose |
+|-------|---------|
+| `sessions` | Sender → agent session UUID (conversation continuity) |
+| `messages` | Inbound message bus + dedup (PK = channel-provided ID) |
+| `cursors` | Per-sender watermark for crash recovery |
+
+The store serves as an **inbound message bus**: channels write messages to the
+store, and the message loop polls for unprocessed messages. This decouples
+message receipt from processing and supports both webhook and polling channels.
+
+**No outbound storage** — the agent SDK session maintains conversation history
+internally. Outbound storage can be added later for observability.
+
 ## Agent Session Management
 
 `AgentManager` in `agent.py` maintains one `ClaudeSDKClient` per sender with:
 
 - **Per-sender locks**: Messages from the same sender are serialized
 - **Global semaphore**: Caps total concurrent SDK calls (default: 3)
-- **Session persistence**: `sessions.db` (sqlitedict) maps sender -> CLI session UUID,
+- **Session persistence**: `sessions` table maps sender -> CLI session UUID,
   allowing conversation resumption across restarts
 - **Request timeout**: Configurable timeout (default 300s) prevents hung SDK calls
-  from blocking the system
+- **Message loop**: Polls the store for unprocessed messages, routes to channels
 
 ### ClaudeAgentOptions
 
@@ -101,33 +126,63 @@ Each SDK client is configured with:
 | `setting_sources` | `["user", "project"]` |
 | `plugins` | `[{"type": "local", "path": "~/plugin"}]` if manifest exists |
 | `resume` | Persisted session UUID if available |
-| `mcp_servers` | `{"clawless": <in-process MCP server>}` with `send_message` tool |
-| `allowed_tools` | Built-in SDK tools + `mcp__clawless__*` (MCP tools require explicit allowlisting) |
+| `output_format` | `{"type": "json_schema", "schema": RESPONSE_SCHEMA}` |
+| `mcp_servers` | `{"clawless": <in-process MCP server>}` (empty, for future tools) |
+| `allowed_tools` | Built-in SDK tools + `mcp__clawless__*` |
+
+### Structured Output
+
+The agent's final response is constrained to a JSON schema via the SDK's
+`output_format` option:
+
+```json
+{"text": "Message text for the user", "media": ["/path/to/file.png"]}
+```
+
+The host reads `ResultMessage.structured_output` and calls `channel.send()`
+with the text and media. No custom MCP tools are needed for message delivery —
+this eliminates the class of loop bugs where the agent's send_message tool
+caused infinite loops.
 
 ### Two-Layer Prompt Design
 
 Framework instructions are split into two layers:
 
-- **`system_prompt`** (in code, not user-editable): Framework internals — send_message
-  tool usage, workspace paths, media handling, plugin info. Uses `SystemPromptPreset`
-  with `preset="claude_code"` to preserve built-in Claude Code tool instructions,
-  appending framework-specific instructions via the `append` field.
+- **`system_prompt`** (in code, not user-editable): Framework internals —
+  structured output format, workspace paths, media handling, plugin info. Uses
+  `SystemPromptPreset` with `preset="claude_code"` to preserve built-in Claude
+  Code tool instructions, appending framework-specific instructions via `append`.
 - **CLAUDE.md** (user-editable): Identity, personality, communication style, and
   workspace context. Single file at `~/workspace/.claude/CLAUDE.md`, loaded via
   `setting_sources=["project"]`.
 
 ### Message Processing Flow
 
-1. Channel webhook receives message, creates `InboundMessage`
-2. Fires `asyncio.create_task(agent.process_message(msg, channel))` — non-blocking
-3. AgentManager acquires per-sender lock + semaphore slot
-4. Sets tool context (`set_context(channel, sender)`) for the `send_message` MCP tool
-5. Builds prompt with channel formatting instructions + user content
-6. Sends to Claude via SDK, streams response (with `request_timeout` guard)
-7. Captures session ID from `SystemMessage.init`, persists to sqlitedict
-8. Agent uses `send_message` tool to deliver replies via `channel.send()`
-9. If agent didn't use the tool: logs warning, delivers `ResultMessage.result` as fallback
-10. On timeout: closes the client, notifies the user
+1. Channel webhook receives message, writes to store (`store.store_message()`)
+2. Returns acknowledgment immediately (e.g. TwiML "Thinking...")
+3. Message loop polls store, finds unprocessed messages
+4. Routes to channel by sender prefix (e.g. `whatsapp:` → WhatsApp channel)
+5. Creates `asyncio.create_task(agent.process_message(msg, channel))`
+6. AgentManager acquires per-sender lock + semaphore slot
+7. Advances cursor optimistically, saves old cursor for rollback
+8. Builds prompt with channel formatting instructions + user content
+9. Sends to Claude via SDK with structured output schema
+10. Captures session ID from `SystemMessage.init`, persists to store
+11. Reads `ResultMessage.structured_output` → `{"text": "...", "media": [...]}`
+12. Host sends text + media via `channel.send()`
+13. On error before output: rolls back cursor (message reprocessed on restart)
+14. On error after output: keeps cursor (prevents duplicate sends)
+15. On no output: sends failure message to user
+
+### Cursor-Based Crash Recovery (Nanoclaw Pattern)
+
+Per-sender cursors track which messages have been processed:
+
+- **Success**: Cursor advanced past processed message
+- **Error after output sent**: Cursor stays advanced (prevents duplicate sends)
+- **Error before output**: Cursor rolled back (allows retry on restart)
+
+This follows the same pattern as nanoclaw's `lastAgentTimestamp`.
 
 ## Channel Architecture
 
@@ -151,12 +206,14 @@ class InboundMessage:
     sender: str              # channel-namespaced, e.g. "whatsapp:+1234567890"
     sender_name: str = ""
     content: str = ""        # text body, may include [mime: path] tags
+    message_id: str = ""     # platform-provided or channel-generated UUID
     media_files: list[str] = []
     metadata: dict = {}
 ```
 
 **Sender namespacing**: Sender IDs are globally unique across channels
 (e.g. `whatsapp:+1234567890`, `test:user1`) and double as session keys.
+The message loop uses sender prefixes to route replies to the correct channel.
 
 ### WhatsApp Channel (`channels/whatsapp.py`)
 
@@ -165,17 +222,17 @@ class InboundMessage:
 - Enforces sender allowlist (no allow-all)
 - Downloads inbound media via Twilio API with Basic Auth to `workspace/media/inbound/`
 - Tags media in message content as `[mime/type: /path/to/file]`
+- Writes inbound messages to the store (dedup via PK on MessageSid)
+- Returns immediate TwiML acknowledgment ("Thinking...")
 - Splits outgoing text at 1600 chars (Twilio limit) using `split_text()`
-- Stages outbound media to `workspace/media/outbound/` and serves via `GET {webhook_path}/media/{filename}` with path traversal protection
-- Returns immediate TwiML acknowledgment ("Thinking...") to meet Twilio's 15-second timeout
-- Sends actual response asynchronously via Twilio REST API
+- Stages outbound media to `workspace/media/outbound/` and serves via GET endpoint
 
 ### Test Channel (`channels/test.py`)
 
-- Feeds scripted messages to the agent sequentially on startup
-- Captures all responses in an ordered list
+- Writes scripted messages to the store with UUID message IDs on startup
+- Waits for the message loop to process all messages
+- Captures all responses in an ordered list via `send()`
 - Exposes `GET /test/responses` and `GET /test/status` for assertions
-- Used for integration testing against the real Claude Agent SDK
 
 ## Plugin System
 
@@ -191,17 +248,10 @@ Skills are auto-namespaced by the SDK (e.g. `private-plugin:my-skill`).
 
 ## Custom MCP Tools
 
-`tools.py` defines an in-process MCP server with custom tools available to the agent.
-Tools are defined at module level with `@tool` and registered in `build_clawless_mcp_server()`.
-To add a new tool: define it with `@tool` in `tools.py`, then add it to the `tools=[]` list.
-
-### send_message
-
-The **only way** the agent communicates with the user. The `system_prompt` parameter
-instructs the agent to always use this tool for replies. The tool handler calls `channel.send()` as
-a side effect. Per-request context (channel, sender) is set via `set_context()` before
-each query. If the agent fails to use the tool, a warning is logged and the SDK's final
-result text is sent as a fallback.
+`tools.py` defines an in-process MCP server registered with the agent. Currently
+empty — tools can be added here for non-contextual side effects. To add a new tool:
+define it with `@tool` in `tools.py`, then add it to the `tools=[]` list in
+`build_clawless_mcp_server()`.
 
 ## Docker Deployment
 
@@ -235,13 +285,13 @@ CLAWLESS_HOST_DIR=~/my-data docker compose up
 
 ## Testing
 
-Three levels of tests, all creating isolated home dirs under `./data/<timestamp>/`:
+Four levels of tests, all creating isolated home dirs under `./data/<timestamp>/`:
 
-### Unit tests (`test_config.py`, `test_base.py`, `test_utils.py`)
+### Unit tests (`test_config.py`, `test_base.py`, `test_utils.py`, `test_store.py`)
 
 Fast, no API key needed. Test configuration loading, path validation, InboundMessage
-construction, and text splitting. Each test creates an isolated home dir via `init_home()`,
-sets `HOME` to point there, and restores it after.
+construction, text splitting, and MessageStore operations (sessions, messages, cursors,
+dedup, unprocessed queries).
 
 ### Host integration test (`test_channel_integration.py`)
 
@@ -250,6 +300,7 @@ Runs the full pipeline in-process against the real Claude Agent SDK:
 - Starts app via `LifespanManager` + `httpx.AsyncClient(ASGITransport)`
 - Session-scoped fixture with `loop_scope="session"` for shared event loop
 - Polls `/test/status` until done, then asserts on `/test/responses`
+- Verifies `clawless.db` exists (store was created)
 - Prints agent responses to stdout
 - Asserts responses don't contain "not logged in" (auth failure detection)
 
@@ -272,17 +323,20 @@ Run with: `uv run pytest -m docker -v -s`
    derives from `~`. `ClawlessPaths` validates on construction.
 2. **Sender namespacing** — Channel-prefixed IDs (`whatsapp:+123`) are globally
    unique, serving as both reply address and session key.
-3. **Fire-and-forget webhooks** — Return acknowledgment immediately, process async.
-4. **Single plugin dir** — `~/plugin/` is one plugin, not a parent of many.
+3. **Message bus architecture** — Channels write to SQLite, message loop polls.
+   Decouples receive from processing, supports future non-webhook channels.
+4. **Host-controlled delivery via structured output** — Agent returns JSON
+   `{"text": "...", "media": [...]}` via SDK's `output_format`. Host sends it.
+   Eliminates the dot-spam loop bug class entirely.
+5. **Cursor-based crash recovery** — Per-sender cursors with optimistic advance
+   and rollback on error (nanoclaw pattern).
+6. **Single plugin dir** — `~/plugin/` is one plugin, not a parent of many.
    Keeps the mount simple.
-5. **API key in Settings** — `ANTHROPIC_API_KEY` is a required field in `Settings`,
+7. **API key in Settings** — `ANTHROPIC_API_KEY` is a required field in `Settings`,
    validated at startup by pydantic.
-6. **Two `.claude/` directories** — `~/.claude/` holds SDK runtime state (sessions,
+8. **Two `.claude/` directories** — `~/.claude/` holds SDK runtime state (sessions,
    memory); `~/workspace/.claude/` holds project-level config (CLAUDE.md, skills,
-   agents). Both are mounted as Docker volumes for persistence. Consolidating them
-   into one directory caused Claude Code to block writes to skills/agents.
-7. **Formatting via prompt injection** — Each channel's `formatting_instructions` are
+   agents). Both are mounted as Docker volumes for persistence.
+9. **Formatting via prompt injection** — Each channel's `formatting_instructions` are
    prepended to the user's message, letting Claude format natively rather than
    post-processing output.
-8. **sqlitedict for sessions** — Simple key-value persistence with autocommit,
-   crash-safe, no migration overhead.

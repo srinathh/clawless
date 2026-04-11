@@ -69,6 +69,7 @@ class ClaudeConfig(BaseModel):
     max_budget_usd: float = 1.0
     max_concurrent_requests: int = 3
     request_timeout: float = 300.0
+    bot_name: str = "Clawless"
 
 
 class TwilioWhatsAppConfig(BaseModel):

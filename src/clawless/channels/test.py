@@ -1,13 +1,14 @@
 """Test channel for integration testing.
 
-Feeds scripted messages to the agent and captures responses via HTTP
-endpoints, allowing end-to-end testing without external services.
+Feeds scripted messages into the message store and captures responses via
+HTTP endpoints, allowing end-to-end testing without external services.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 from fastapi import FastAPI
 
@@ -35,12 +36,23 @@ class TestChannel(Channel):
         self._responses.append({"to": to, "text": text, "media": media or []})
 
     async def run(self) -> None:
-        """Feed scripted messages to the agent sequentially, then signal done."""
+        """Write scripted messages to the store, then signal done when all are processed."""
         try:
-            agent = self._app.state.agent
+            store = self._app.state.store
             for content in self._config.messages:
-                msg = InboundMessage(sender=self._config.sender, content=content)
-                await agent.process_message(msg, self)
+                msg_id = f"test_{uuid.uuid4().hex}"
+                store.store_message(
+                    id=msg_id,
+                    sender=self._config.sender,
+                    content=content,
+                    inbound=True,
+                )
+            # Wait for the message loop to process all messages.
+            # Poll until we have at least as many responses as scripted messages.
+            for _ in range(300):  # up to 5 minutes
+                if len(self._responses) >= len(self._config.messages):
+                    break
+                await asyncio.sleep(1)
         except Exception as e:
             self._error = str(e)
             logger.exception("Test channel run failed")
