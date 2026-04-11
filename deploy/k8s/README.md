@@ -31,21 +31,21 @@ kubectl -n clawless logs deploy/clawless -f
 | File | Committed | Purpose |
 |---|---|---|
 | `namespace.yaml` | Yes | `clawless` namespace |
-| `pvc.yaml` | Yes | 5Gi PersistentVolumeClaim (uses cluster default StorageClass) |
 | `deployment.yaml` | Yes | Deployment: 1 replica, Recreate strategy, init container for scaffolding |
 | `service.yaml` | Yes | ClusterIP Service on port 18265 |
-| `kustomization.yaml` | Yes | Kustomize entrypoint — image tag, StorageClass patch, resource list |
+| `kustomization.yaml` | Yes | Kustomize entrypoint — image tag, hostPath patch, resource list |
 | `configmap-template.yaml` | Yes | Template for ConfigMap (non-sensitive config) |
 | `secret-template.yaml` | Yes | Template for Secret (API keys, Twilio creds) |
 | `configmap.yaml` | **No** (gitignored) | Your actual ConfigMap — copy from template |
 | `secret.yaml` | **No** (gitignored) | Your actual Secret — copy from template |
+| `pvc.yaml` | Yes | Alternative PVC-based storage (not used by default, see below) |
 
 ## Architecture
 
-The deployment uses a single PVC with `subPath` mounts for all data directories:
+The deployment uses a direct **hostPath** volume with `subPath` mounts for all data directories. This gives you direct filesystem access to manage plugins, backups, and config on the host.
 
 ```
-PVC (clawless-home)
+hostPath (default: /srv/clawless, override in kustomization.yaml)
 ├── .claude/       → /home/clawless/.claude      (rw) SDK runtime state
 ├── workspace/     → /home/clawless/workspace    (rw) agent working directory
 ├── data/          → /home/clawless/data         (rw) SQLite database
@@ -53,15 +53,21 @@ PVC (clawless-home)
 └── plugin/        → /home/clawless/plugin       (ro) pre-configured plugin
 ```
 
-An **init container** runs `clawless-init` on every start to scaffold these directories inside the PVC. It mounts the raw PVC at `/mnt/clawless-home` because the subdirectories may not exist on first run. The main container then mounts the individual subdirectories into `/home/clawless/` via subPath. The init is idempotent — it only creates directories and template files if they don't already exist.
+An **init container** runs `clawless-init` on every start to scaffold these directories. It mounts the hostPath at `/mnt/clawless-home` because the subdirectories may not exist on first run. The main container then mounts the individual subdirectories into `/home/clawless/` via subPath. The init is idempotent — it only creates directories and template files if they don't already exist.
+
+You can manage the `plugin/` directory directly on the host to add private plugins, skills, or agents without going through kubectl.
 
 Configuration (`clawless.toml`) is mounted from a ConfigMap. Secrets are injected as environment variables — pydantic-settings reads them with `__` as the nested delimiter (e.g. `CHANNELS__TWILIO_WHATSAPP__ACCOUNT_SID`).
 
+### Using PVC instead of hostPath
+
+For managed Kubernetes clusters where hostPath is restricted, add `pvc.yaml` to the resources list in `kustomization.yaml` and replace the hostPath volume in `deployment.yaml` with a PVC reference. See `pvc.yaml` for the PVC definition.
+
 ## Customization via kustomization.yaml
 
-**Image tag**: change `newTag` under the `images` section.
+**Host path**: the patch overrides the default `/srv/clawless` to your preferred directory on the host.
 
-**StorageClass**: the base PVC omits `storageClassName` (uses cluster default). The kustomization patches in `microk8s-hostpath` — remove or change the patch for other clusters.
+**Image tag**: change `newTag` under the `images` section.
 
 **Port**: a commented-out patch block shows how to override the default port (18265).
 
