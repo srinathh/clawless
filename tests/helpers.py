@@ -7,14 +7,20 @@ from clawless.init import init_home
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-TOML_CONFIG = """
+TOML_CONFIG = """\
 [claude]
 max_turns = 8
 max_budget_usd = 1.00
 
 [channels.test]
 sender = "test:user1"
-messages = ["Hello, who are you?", "What is 2+2?", "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.", "Create a skill called 'greet' that responds with 'Hello!' when invoked. Confirm when done.", "Invoke the /workspace-plugin:greet skill and tell me what it said."]
+messages = [
+    "Hello, who are you?",
+    "What is 2+2?",
+    "Create a file called test.txt in your working directory with the contents 'test'. Confirm when done.",
+    '''Create a skill called 'sysinfo' that when invoked runs this exact command using Bash: python3 -c "import platform; print('SYSINFO:' + platform.system() + ':' + platform.machine())" and reports the output to the user. Confirm when done.''',
+    "Run the /workspace-plugin:sysinfo skill and tell me exactly what it printed.",
+]
 """
 
 
@@ -53,22 +59,17 @@ def assert_agent_responses(responses: list[dict], run_dir: Path) -> None:
     )
 
     # Verify skill created in writable plugin, not read-only plugin (fourth scripted message)
-    # Note: skill creation may fail due to turn/budget limits — check if attempted
-    skill_file = run_dir / "workspace" / "plugin" / "skills" / "greet" / "SKILL.md"
-    readonly_skill = run_dir / "plugin" / "skills" / "greet" / "SKILL.md"
-    if skill_file.exists():
-        assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
-    else:
-        # Agent may not have created the skill (turn/budget limit) — not a failure
-        # as long as it didn't write to the read-only plugin dir
-        assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
+    skill_file = run_dir / "workspace" / "plugin" / "skills" / "sysinfo" / "SKILL.md"
+    readonly_skill = run_dir / "plugin" / "skills" / "sysinfo" / "SKILL.md"
+    assert skill_file.exists(), f"Agent did not create skill at {skill_file}"
+    assert not readonly_skill.exists(), f"Agent wrongly created skill in read-only plugin dir at {readonly_skill}"
 
-    # Verify skill was invoked (fifth scripted message)
-    # The response should contain "Hello!" from the greet skill
+    # Verify skill was invoked and actually ran the python script (fifth scripted message)
+    # The output must contain "SYSINFO:Linux:" which can only come from running the script
     all_text = " ".join(r["text"] for r in responses)
-    assert "Hello!" in all_text, (
-        f"Expected 'Hello!' from greet skill invocation in responses, "
-        f"got: {[r['text'][:80] for r in responses]}"
+    assert "SYSINFO:" in all_text, (
+        f"Expected 'SYSINFO:' from sysinfo skill invocation (proves script ran), "
+        f"got: {[r['text'][:100] for r in responses]}"
     )
 
     # Verify clawless.db was created by the store
