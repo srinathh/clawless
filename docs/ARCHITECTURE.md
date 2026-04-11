@@ -30,10 +30,13 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │   ├── media/              # Channel media files (auto-created at runtime)
 │   │   ├── inbound/        # Downloaded from messaging platforms
 │   │   └── outbound/       # Staged for sending via messaging platforms
-│   └── .claude/
-│       ├── CLAUDE.md       # Agent instructions (identity, workspace, extensibility)
-│       ├── skills/         # Bot-created skills (standalone format, writable)
-│       └── agents/         # Bot-created agents (standalone format, writable)
+│   ├── .claude/
+│   │   └── CLAUDE.md       # Agent instructions (identity, workspace, extensibility)
+│   └── plugin/             # Writable plugin — bot-created skills/agents
+│       ├── .claude-plugin/
+│       │   └── plugin.json
+│       ├── skills/         # Bot-created skills (writable)
+│       └── agents/         # Bot-created agents (writable)
 ├── data/                   # App runtime state. rw, NOT agent-accessible
 │   └── clawless.db         # SQLite message store (sessions, messages, cursors)
 ├── clawless.toml           # App config (channels, claude options). ro in Docker

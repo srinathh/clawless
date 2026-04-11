@@ -186,7 +186,8 @@ Used by WhatsApp channel for Twilio's 1600-character limit.
 **`init_home(path)`** creates:
 - `.claude/`, `workspace/`, `data/` directories
 - Plugin skeleton: `.claude-plugin/plugin.json`, `skills/`, `agents/`, `commands/`, `hooks/`
-- `workspace/.claude/` for project-level skills, agents, and config
+- `workspace/.claude/` for project-level SDK settings (CLAUDE.md)
+- `workspace/plugin/` writable plugin scaffold (bot-created skills/agents)
 - CLAUDE.md template at project level
 - Config template at top level
 
