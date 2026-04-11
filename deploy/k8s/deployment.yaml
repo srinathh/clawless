@@ -22,8 +22,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
-      # Init container mounts the raw PVC to scaffold the directory tree on
-      # first run (idempotent). It uses /mnt/ because the subdirectories
+      # Init container mounts the hostPath volume to scaffold the directory
+      # tree on first run (idempotent). It uses /mnt/ because the subdirs
       # don't exist yet — the main container then mounts them individually
       # into /home/clawless/ via subPath.
       initContainers:
@@ -92,8 +92,10 @@ spec:
               readOnly: true
       volumes:
         - name: clawless-home
-          persistentVolumeClaim:
-            claimName: clawless-home
+          hostPath:
+            # Override this path via kustomize patch for your environment.
+            path: /srv/clawless
+            type: DirectoryOrCreate
         - name: clawless-config
           configMap:
             name: clawless-config

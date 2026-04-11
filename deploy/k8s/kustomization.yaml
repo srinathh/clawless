@@ -7,14 +7,23 @@ images:
 
 resources:
   - namespace.yaml
-  - pvc.yaml
   - configmap.yaml
   - secret.yaml
   - deployment.yaml
   - service.yaml
 
+# Override the hostPath to match your host directory.
+# Run clawless-init on the host first, or let the init container create it.
+patches:
+  - target:
+      kind: Deployment
+      name: clawless
+    patch: |
+      - op: replace
+        path: /spec/template/spec/volumes/0/hostPath/path
+        value: /home/srinathh/clawless
+
 # Uncomment to override the default port (18265):
-# patches:
 #   - target:
 #       kind: Deployment
 #       name: clawless
@@ -32,13 +41,3 @@ resources:
 #       - op: replace
 #         path: /spec/ports/0/port
 #         value: 9090
-
-# MicroK8s: override the default StorageClass to microk8s-hostpath
-patches:
-  - target:
-      kind: PersistentVolumeClaim
-      name: clawless-home
-    patch: |
-      - op: add
-        path: /spec/storageClassName
-        value: microk8s-hostpath
