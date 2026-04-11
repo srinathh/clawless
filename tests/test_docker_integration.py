@@ -20,6 +20,7 @@ from helpers import PROJECT_ROOT, assert_agent_responses, create_test_home
 load_dotenv()
 
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose.yml"
+COMPOSE_GHCR_FILE = PROJECT_ROOT / "docker-compose.ghcr.yml"
 TEST_PORT = 18266
 
 
@@ -31,9 +32,17 @@ def _resolve_credentials() -> dict[str, str]:
     return {"ANTHROPIC_API_KEY": api_key}
 
 
+def _compose_files() -> list[str]:
+    """Return compose file args, adding GHCR override if CLAWLESS_USE_GHCR is set."""
+    files = ["-f", str(COMPOSE_FILE)]
+    if os.environ.get("CLAWLESS_USE_GHCR"):
+        files += ["-f", str(COMPOSE_GHCR_FILE)]
+    return files
+
+
 def _compose(*args: str, env: dict[str, str], quiet: bool = False) -> subprocess.CompletedProcess:
     """Run a docker compose command against the project compose file."""
-    cmd = ["docker", "compose", "-f", str(COMPOSE_FILE), *args]
+    cmd = ["docker", "compose", *_compose_files(), *args]
     if quiet:
         return subprocess.run(cmd, env={**os.environ, **env}, capture_output=True, text=True)
     return subprocess.run(cmd, env={**os.environ, **env}, text=True)
@@ -52,8 +61,11 @@ def docker_service():
         **cred_env,
     }
 
-    # Build and start
-    result = _compose("up", "-d", "--build", env=compose_env)
+    # Start (build locally unless CLAWLESS_USE_GHCR is set)
+    up_args = ["up", "-d"]
+    if not os.environ.get("CLAWLESS_USE_GHCR"):
+        up_args.append("--build")
+    result = _compose(*up_args, env=compose_env)
     if result.returncode != 0:
         pytest.fail(f"docker compose up failed:\n{result.stderr}")
 

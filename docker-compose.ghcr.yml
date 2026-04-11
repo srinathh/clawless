@@ -1,0 +1,6 @@
+# Override: use pre-built GHCR image instead of local build.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up
+services:
+  agent:
+    image: ghcr.io/srinathh/clawless:latest
+    build: !reset null
