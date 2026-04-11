@@ -299,8 +299,11 @@ class AgentManager:
                 # Cursor rollback: if nothing was sent, roll back so the message
                 # can be reprocessed on restart (nanoclaw pattern).
                 if not output_sent and previous_cursor is not None:
-                    self._store.set_cursor(sender, previous_cursor)
-                    logger.info("Rolled back cursor for %s (no output sent)", sender)
+                    try:
+                        self._store.set_cursor(sender, previous_cursor)
+                        logger.info("Rolled back cursor for %s (no output sent)", sender)
+                    except Exception:
+                        logger.debug("Could not roll back cursor for %s (store may be closed)", sender)
 
     # ------------------------------------------------------------------
     # Message loop
