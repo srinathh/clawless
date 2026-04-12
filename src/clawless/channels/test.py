@@ -48,10 +48,20 @@ class TestChannel(Channel):
                     inbound=True,
                 )
             # Wait for the message loop to process all messages.
-            # Poll until we have at least as many responses as scripted messages.
+            # With TextBlock sending, each message can produce multiple
+            # responses, so wait until the count stabilizes after reaching
+            # at least one response per scripted message.
+            last_count = 0
+            stable_ticks = 0
             for _ in range(300):  # up to 5 minutes
-                if len(self._responses) >= len(self._config.messages):
-                    break
+                current_count = len(self._responses)
+                if current_count >= len(self._config.messages) and current_count == last_count:
+                    stable_ticks += 1
+                    if stable_ticks >= 5:
+                        break
+                else:
+                    stable_ticks = 0
+                last_count = current_count
                 await asyncio.sleep(1)
         except Exception as e:
             self._error = str(e)
