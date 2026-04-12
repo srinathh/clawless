@@ -17,11 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from claude_agent_sdk import (
+    AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
     SdkPluginConfig,
     SystemMessage,
+    TextBlock,
 )
 
 from clawless.channels.base import Channel, InboundMessage
@@ -87,6 +89,7 @@ class _SessionClient:
 
     client: ClaudeSDKClient
     session_id: str | None = None
+    is_resuming: bool = False
 
 
 class AgentManager:
@@ -167,10 +170,15 @@ class AgentManager:
             return self._clients[session_key]
 
         options = self._build_options(session_key)
+        is_resuming = options.resume is not None
         client = ClaudeSDKClient(options=options)
         await client.__aenter__()
         try:
-            sc = _SessionClient(client=client, session_id=self._store.get_session(session_key))
+            sc = _SessionClient(
+                client=client,
+                session_id=self._store.get_session(session_key),
+                is_resuming=is_resuming,
+            )
             self._clients[session_key] = sc
         except Exception:
             await client.__aexit__(None, None, None)
@@ -184,6 +192,12 @@ class AgentManager:
                 await sc.client.__aexit__(None, None, None)
             except Exception:
                 logger.debug("Error closing client for %s", session_key)
+
+    async def _reset_session(self, session_key: str) -> None:
+        """Close the SDK client AND clear the persisted session so the next message starts fresh."""
+        await self._close_client(session_key)
+        self._store.delete_session(session_key)
+        logger.info("Reset session for %s (client closed, persisted session cleared)", session_key)
 
     # ------------------------------------------------------------------
     # Message processing
@@ -212,11 +226,16 @@ class AgentManager:
                 logger.debug("Client ready for %s, starting query", sender)
 
                 async def _run_query() -> tuple[str, dict | None]:
+                    nonlocal output_sent
                     prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
                     await sc.client.query(prompt)
                     logger.debug("Query submitted for %s, receiving response", sender)
                     content = ""
                     structured = None
+                    # When resuming a session, history replays first.
+                    # Skip TextBlocks until we see a ResultMessage (end of
+                    # replayed turn), then send TextBlocks for the new response.
+                    past_history = not sc.is_resuming
                     async for msg in sc.client.receive_response():
                         msg_type = type(msg).__name__
                         logger.debug("SDK message for %s: %s", sender, msg_type)
@@ -236,6 +255,16 @@ class AgentManager:
                                 content = msg.result
                             if msg.structured_output is not None:
                                 structured = msg.structured_output
+                            past_history = True
+                        elif isinstance(msg, AssistantMessage):
+                            for block in msg.content:
+                                if isinstance(block, TextBlock) and block.text.strip():
+                                    if past_history:
+                                        logger.debug("Sending TextBlock for %s: %r", sender, block.text[:200])
+                                        await channel.send(sender, text=block.text)
+                                        output_sent = True
+                                    else:
+                                        logger.debug("Skipping replayed TextBlock for %s", sender)
                         else:
                             preview = ""
                             for attr in ("content", "text", "data", "result"):
@@ -244,6 +273,8 @@ class AgentManager:
                                     preview = repr(val)[:300]
                                     break
                             logger.info("Unhandled %s for %s: %s", msg_type, sender, preview or "(no content attr)")
+                    # First query after resume is done — clear the flag
+                    sc.is_resuming = False
                     return content, structured
 
                 final_content, structured = await asyncio.wait_for(
@@ -272,15 +303,18 @@ class AgentManager:
                     await channel.send(sender, media=media)
                     output_sent = True
                 else:
-                    logger.warning("No response produced for %s", sender)
+                    logger.warning("No response produced for %s, resetting session", sender)
+                    await self._reset_session(sender)
                     await channel.send(
-                        sender, text="Sorry, I wasn't able to generate a response."
+                        sender,
+                        text="Sorry, I wasn't able to generate a response. "
+                        "I have reset the agent, please try again.",
                     )
                     output_sent = True
 
             except asyncio.TimeoutError:
-                logger.error("SDK call timed out for %s", sender)
-                await self._close_client(sender)
+                logger.error("SDK call timed out for %s, resetting session", sender)
+                await self._reset_session(sender)
                 try:
                     await channel.send(
                         sender, text="Sorry, the request timed out. Please try again."
@@ -290,7 +324,8 @@ class AgentManager:
                     logger.exception("Failed to send timeout message to %s", sender)
 
             except Exception:
-                logger.exception("Error processing message for %s", sender)
+                logger.exception("Error processing message for %s, resetting session", sender)
+                await self._reset_session(sender)
                 try:
                     await channel.send(
                         sender,

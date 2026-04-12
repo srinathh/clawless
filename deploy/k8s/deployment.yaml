@@ -47,7 +47,7 @@ spec:
             - name: PORT
               value: "18265"
             - name: LOG_LEVEL
-              value: "INFO"
+              value: "DEBUG"
           command: ["/bin/bash", "-c", "clawless 2>&1 | tee /home/clawless/logs/clawless.log"]
           livenessProbe:
             httpGet:
