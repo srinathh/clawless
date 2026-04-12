@@ -35,6 +35,14 @@ class TestSessions:
         store.set_session("user1", "new")
         assert store.get_session("user1") == "new"
 
+    def test_delete_session(self, store: MessageStore):
+        store.set_session("user1", "session-abc")
+        store.delete_session("user1")
+        assert store.get_session("user1") is None
+
+    def test_delete_nonexistent_session(self, store: MessageStore):
+        store.delete_session("nobody")  # should not raise
+
 
 class TestMessages:
     def test_store_returns_true_on_insert(self, store: MessageStore):

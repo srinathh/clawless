@@ -74,6 +74,10 @@ class MessageStore:
         )
         self._conn.commit()
 
+    def delete_session(self, sender: str) -> None:
+        self._conn.execute("DELETE FROM sessions WHERE sender = ?", (sender,))
+        self._conn.commit()
+
     # ------------------------------------------------------------------
     # Messages
     # ------------------------------------------------------------------
