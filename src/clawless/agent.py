@@ -225,16 +225,18 @@ class AgentManager:
                 sc = await self._get_or_create_client(sender)
                 logger.debug("Client ready for %s, starting query", sender)
 
-                async def _run_query() -> tuple[str, dict | None]:
-                    nonlocal output_sent
+                async def _run_query() -> tuple[str, dict | None, list[str]]:
                     prompt = f"[{channel.formatting_instructions}]\n\n{message.content}"
                     await sc.client.query(prompt)
                     logger.debug("Query submitted for %s, receiving response", sender)
                     content = ""
                     structured = None
+                    # Buffer TextBlocks — sent after deduplication against
+                    # the final StructuredOutput to avoid double-sending.
+                    text_blocks: list[str] = []
                     # When resuming a session, history replays first.
                     # Skip TextBlocks until we see a ResultMessage (end of
-                    # replayed turn), then send TextBlocks for the new response.
+                    # replayed turn), then collect TextBlocks for the new response.
                     past_history = not sc.is_resuming
                     async for msg in sc.client.receive_response():
                         msg_type = type(msg).__name__
@@ -260,9 +262,7 @@ class AgentManager:
                             for block in msg.content:
                                 if isinstance(block, TextBlock) and block.text.strip():
                                     if past_history:
-                                        logger.debug("Sending TextBlock for %s: %r", sender, block.text[:200])
-                                        await channel.send(sender, text=block.text)
-                                        output_sent = True
+                                        text_blocks.append(block.text)
                                     else:
                                         logger.debug("Skipping replayed TextBlock for %s", sender)
                         else:
@@ -275,9 +275,9 @@ class AgentManager:
                             logger.info("Unhandled %s for %s: %s", msg_type, sender, preview or "(no content attr)")
                     # First query after resume is done — clear the flag
                     sc.is_resuming = False
-                    return content, structured
+                    return content, structured, text_blocks
 
-                final_content, structured = await asyncio.wait_for(
+                final_content, structured, text_blocks = await asyncio.wait_for(
                     _run_query(), timeout=self._config.request_timeout
                 )
 
@@ -290,6 +290,14 @@ class AgentManager:
                 elif final_content:
                     # Fallback: plain text if structured output wasn't produced
                     text = final_content
+
+                # Send intermediate TextBlocks that differ from the final
+                # structured output (avoids duplicating the final response).
+                for tb in text_blocks:
+                    if tb.strip() != text.strip():
+                        logger.debug("Sending intermediate TextBlock for %s: %r", sender, tb[:200])
+                        await channel.send(sender, text=tb)
+                        output_sent = True
 
                 logger.debug(
                     "Query complete for %s: text=%r, media=%r",
