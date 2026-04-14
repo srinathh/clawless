@@ -50,6 +50,9 @@ RESPONSE_SCHEMA = {
     "required": ["text"],
 }
 
+RESET_AGENT_CMD = "/reset_agent"
+RESET_QUEUE_CMD = "/reset_queue"
+
 FRAMEWORK_SYSTEM_PROMPT = """\
 Your response will be delivered to the user automatically as a structured JSON \
 object. Reply naturally in the "text" field. To attach files, include their \
@@ -221,6 +224,30 @@ class AgentManager:
 
             output_sent = False
             try:
+                # --- Command interception (no SDK call needed) ---
+                content = message.content.strip()
+
+                if content == RESET_AGENT_CMD:
+                    await self._reset_session(sender)
+                    await channel.send(
+                        sender,
+                        text="Agent reset. Your next message starts a fresh conversation.",
+                    )
+                    output_sent = True
+                    return
+
+                if content == RESET_QUEUE_CMD:
+                    skipped = self._store.skip_to_latest(sender)
+                    reply = (
+                        "Queue cleared."
+                        if skipped == 0
+                        else f"Queue cleared — {skipped} pending message(s) cancelled."
+                    )
+                    await channel.send(sender, text=reply)
+                    output_sent = True
+                    return
+                # --- End command interception ---
+
                 logger.debug("Processing message for %s: %r", sender, message.content[:200])
                 sc = await self._get_or_create_client(sender)
                 logger.debug("Client ready for %s, starting query", sender)
