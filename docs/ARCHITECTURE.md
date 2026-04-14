@@ -32,6 +32,7 @@ Everything lives under `~` (home dir of the `clawless` user in Docker). The
 │   │   └── outbound/       # Staged for sending via messaging platforms
 │   ├── .claude/
 │   │   └── CLAUDE.md       # Agent instructions (identity, workspace, extensibility)
+│   ├── wiki/               # Markdown wiki, served at /wiki (agent-writable)
 │   └── plugin/             # Writable plugin — bot-created skills/agents
 │       ├── .claude-plugin/
 │       │   └── plugin.json
@@ -248,6 +249,27 @@ plugins=[{"type": "local", "path": str(plugin_dir)}]
 ```
 
 Skills are auto-namespaced by the SDK (e.g. `private-plugin:my-skill`).
+
+## Wiki Endpoint
+
+`wiki.py` exposes a read-only web view of the agent's `~/workspace/wiki/`
+directory.
+
+| Route | Behaviour |
+|---|---|
+| `GET /wiki` | HTML index listing all `.md` files in `workspace/wiki` |
+| `GET /wiki/{path}` | Renders the named markdown file as HTML (`.md` extension optional) |
+
+The router is registered during lifespan via `app.include_router(make_wiki_router(paths.workspace))`.
+
+`workspace/wiki/` is agent-accessible (inside the agent's cwd), so the agent
+can create and edit wiki pages directly. The endpoint returns 404 if the wiki
+directory or requested page doesn't exist, and 403 for any path traversal
+attempt outside the wiki root.
+
+Markdown is rendered with Python-Markdown using the `fenced_code`, `tables`,
+and `toc` extensions. Output is wrapped in a minimal self-contained HTML page
+with light responsive styling.
 
 ## Custom MCP Tools
 

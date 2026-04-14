@@ -158,6 +158,25 @@ the response count.
 - `GET /test/responses` — returns all captured responses
 - `GET /test/status` — returns done flag, message count, response count, error
 
+## `src/clawless/wiki.py` — Wiki Endpoint
+
+Exposes `~/workspace/wiki/` as rendered HTML pages via two routes.
+
+**`make_wiki_router(workspace)`** takes the workspace `Path` and returns an
+`APIRouter` with prefix `/wiki`. The wiki root is `workspace / "wiki"`.
+
+**`GET /wiki`** — lists all `.md` files found via `rglob("*.md")`, sorted and
+linked by relative path. Returns 404 if the wiki directory doesn't exist yet.
+
+**`GET /wiki/{page_path}`** — resolves the path against the wiki root, accepting
+requests with or without `.md` extension. Reads the file, calls
+`markdown.Markdown.convert()` (reset between requests), and wraps the result in
+a minimal HTML page with breadcrumb navigation. Blocks traversal outside the
+wiki root with a `resolve()` / `relative_to()` check (403 on violation).
+
+The `_MD` instance is module-level and re-used; `.reset()` is called before each
+render to clear state left from `toc` extension processing.
+
 ## `src/clawless/tools.py` — MCP Tool Harness
 
 Defines an in-process MCP server registered with the agent. Currently empty —
