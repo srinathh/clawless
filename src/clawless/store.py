@@ -78,6 +78,43 @@ class MessageStore:
         self._conn.execute("DELETE FROM sessions WHERE sender = ?", (sender,))
         self._conn.commit()
 
+    def skip_to_latest(self, sender: str) -> int:
+        """Advance cursor to the most recent inbound message for sender.
+
+        Returns the count of messages skipped (those between the current cursor
+        and the new cursor position, exclusive on both ends).
+        Call this after the cursor has already been advanced to the command message.
+        """
+        current_cursor_id = self.get_cursor(sender)
+        latest_row = self._conn.execute(
+            "SELECT id FROM messages WHERE sender = ? AND inbound = 1 ORDER BY rowid DESC LIMIT 1",
+            (sender,),
+        ).fetchone()
+        if not latest_row:
+            return 0
+        latest_id = latest_row["id"]
+        if latest_id == current_cursor_id:
+            return 0
+
+        skipped = 0
+        if current_cursor_id:
+            cursor_rowid = self._conn.execute(
+                "SELECT rowid FROM messages WHERE id = ?", (current_cursor_id,)
+            ).fetchone()
+            latest_rowid = self._conn.execute(
+                "SELECT rowid FROM messages WHERE id = ?", (latest_id,)
+            ).fetchone()
+            if cursor_rowid and latest_rowid:
+                result = self._conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM messages "
+                    "WHERE sender = ? AND inbound = 1 AND rowid > ? AND rowid < ?",
+                    (sender, cursor_rowid["rowid"], latest_rowid["rowid"]),
+                ).fetchone()
+                skipped = result["cnt"] if result else 0
+
+        self.set_cursor(sender, latest_id)
+        return skipped
+
     # ------------------------------------------------------------------
     # Messages
     # ------------------------------------------------------------------
