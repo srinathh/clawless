@@ -115,6 +115,7 @@ class AgentManager:
         self._locks: dict[str, asyncio.Lock] = {}
         self._concurrency_gate = asyncio.Semaphore(config.max_concurrent_requests)
         self._mcp_server = build_clawless_mcp_server()
+        self._in_flight_msgs: set[str] = set()  # message IDs with tasks already dispatched
 
     # ------------------------------------------------------------------
     # Client lifecycle
@@ -378,6 +379,10 @@ class AgentManager:
                         logger.warning("No channel for sender %s", sender)
                         continue
                     for msg in messages:
+                        msg_id = msg["id"]
+                        if msg_id in self._in_flight_msgs:
+                            continue
+                        self._in_flight_msgs.add(msg_id)
                         media_files = (
                             json.loads(msg["media_files"])
                             if msg["media_files"]
@@ -386,11 +391,18 @@ class AgentManager:
                         inbound = InboundMessage(
                             sender=msg["sender"],
                             content=msg["content"],
-                            message_id=msg["id"],
+                            message_id=msg_id,
                             sender_name=msg["sender_name"],
                             media_files=media_files,
                         )
-                        asyncio.create_task(self.process_message(inbound, channel))
+
+                        async def _dispatch(inbound=inbound, _msg_id=msg_id):
+                            try:
+                                await self.process_message(inbound, channel)
+                            finally:
+                                self._in_flight_msgs.discard(_msg_id)
+
+                        asyncio.create_task(_dispatch())
             except Exception:
                 logger.exception("Error in message loop")
             await asyncio.sleep(poll_interval)
