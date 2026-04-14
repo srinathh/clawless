@@ -113,7 +113,6 @@ class AgentManager:
         self._store = store
         self._clients: dict[str, _SessionClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
-        self._concurrency_gate = asyncio.Semaphore(config.max_concurrent_requests)
         self._mcp_server = build_clawless_mcp_server()
         self._in_flight_msgs: set[str] = set()  # message IDs with tasks already dispatched
 
@@ -215,7 +214,7 @@ class AgentManager:
         sender = message.sender
         lock = self._locks.setdefault(sender, asyncio.Lock())
 
-        async with lock, self._concurrency_gate:
+        async with lock:
             # Advance cursor optimistically, save old for rollback
             previous_cursor = self._store.get_cursor(sender)
             self._store.set_cursor(sender, message.message_id)
