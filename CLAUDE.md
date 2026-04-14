@@ -8,7 +8,8 @@ Read through the documentation and plans to understand the architecture:
 
 - `docs/ARCHITECTURE.md` — Current architecture, directory convention, data flow, design decisions
 - `docs/CODE_WALKTHROUGH.md` — File-by-file code walkthrough
-- `docs/SPEC.md` — Original design spec with implementation status annotations
+- `docs/DEPLOYMENT.md` — End-to-end deployment guide (k8s cluster, GHA, rollouts)
+- `docs/specs/SPEC.md` — Original design spec with implementation status annotations
 - `docs/plans/` — Implementation plans (check which are already implemented vs. pending)
 
 ## Project structure
@@ -20,6 +21,7 @@ src/clawless/
 ├── agent.py           # AgentManager — SDK client lifecycle, structured output, message loop
 ├── store.py           # MessageStore — SQLite bus for messages, sessions, cursors
 ├── tools.py           # MCP tool harness (empty, for future tools)
+├── wiki.py            # /wiki endpoint — serves ~/workspace/wiki as rendered HTML
 ├── init.py            # clawless-init command — scaffolds home directory
 ├── utils.py           # Text splitting utility
 └── channels/
