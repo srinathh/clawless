@@ -14,6 +14,7 @@ from clawless.channels.base import Channel
 from clawless.channels.whatsapp import TwilioWhatsAppChannel
 from clawless.config import ClawlessPaths, Settings
 from clawless.store import MessageStore
+from clawless.wiki import make_wiki_router
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,9 @@ async def lifespan(app: FastAPI):
     os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
     logger.info("Starting clawless — home: %s", paths.home)
+
+    # Wiki endpoint — serves ~/workspace/wiki as rendered HTML
+    app.include_router(make_wiki_router(paths.workspace))
 
     # media_dir is a runtime artifact, auto-created
     paths.media_dir.mkdir(parents=True, exist_ok=True)
