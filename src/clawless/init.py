@@ -41,7 +41,6 @@ CONFIG_TEMPLATE = """\
 [claude]
 max_turns = 30
 max_budget_usd = 1.0
-max_concurrent_requests = 3
 
 # Channels — only configured channels get instantiated.
 # Remove or comment out a section to disable that channel.

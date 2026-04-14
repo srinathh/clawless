@@ -81,7 +81,6 @@ Edit `~/my-data/clawless.toml`:
 [claude]
 max_turns = 30
 max_budget_usd = 1.0
-max_concurrent_requests = 3
 
 [channels.twilio_whatsapp]
 account_sid = "AC..."
@@ -107,7 +106,6 @@ Configuration is loaded from `~/clawless.toml` with environment variable overrid
 | `port` | `18265` | HTTP server port |
 | `claude.max_turns` | `30` | Maximum agent turns per request |
 | `claude.max_budget_usd` | `1.0` | Budget cap per request |
-| `claude.max_concurrent_requests` | `3` | Max parallel SDK calls |
 | `claude.request_timeout` | `300.0` | Timeout per request (seconds) |
 
 The Anthropic API key is **not** part of the config — pass it via the `ANTHROPIC_API_KEY` environment variable.

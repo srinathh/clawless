@@ -81,7 +81,6 @@ def test_load_from_toml():
 [claude]
 max_turns = 10
 max_budget_usd = 0.5
-max_concurrent_requests = 2
 
 [channels.twilio_whatsapp]
 account_sid = "AC123"
@@ -99,7 +98,6 @@ allowed_senders = ["whatsapp:+1234567890"]
         assert settings.anthropic_api_key == FAKE_API_KEY
         assert settings.claude.max_turns == 10
         assert settings.claude.max_budget_usd == 0.5
-        assert settings.claude.max_concurrent_requests == 2
         assert settings.channels.twilio_whatsapp is not None
         assert settings.channels.twilio_whatsapp.account_sid == "AC123"
         assert settings.channels.twilio_whatsapp.whatsapp_from == "whatsapp:+14155238886"
@@ -175,7 +173,6 @@ sender = "test:user1"
         settings = Settings()
         assert settings.claude.max_turns == 30
         assert settings.claude.max_budget_usd == 1.0
-        assert settings.claude.max_concurrent_requests == 3
     finally:
         del os.environ["ANTHROPIC_API_KEY"]
         _teardown_home(old_home)
