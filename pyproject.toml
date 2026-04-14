@@ -15,6 +15,7 @@ dependencies = [
     "httpx",
     "twilio",
     "pydantic-settings",
+    "markdown>=3.10.2",
 ]
 
 [project.scripts]
